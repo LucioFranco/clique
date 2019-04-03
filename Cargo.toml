@@ -1,0 +1,15 @@
+[package]
+name = "clique"
+version = "0.1.0"
+authors = ["Lucio Franco <luciofranco14@gmail.com>"]
+edition = "2018"
+publish = false
+
+[dependencies]
+futures = "0.1"
+tokio = "0.1"
+serde = { version = "1.0", features = ["derive"] }
+tokio-trace = { git = "https://github.com/tokio-rs/tokio" }
+
+[dev-dependencies]
+tokio-test = { git = "https://github.com/LucioFranco/tokio", branch = "tokio-test" }

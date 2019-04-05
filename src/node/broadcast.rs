@@ -94,13 +94,14 @@ impl TransmitQueue {
         };
 
         if self.filter.contains(&uuid) {
-            let remove: Vec<&LimitedBroadcast> = self
+            let remove: Vec<LimitedBroadcast> = self
                 .set
                 .iter()
                 .filter(|&lb| lb.broadcast.uuid == uuid)
+                .map(|b| b.clone())
                 .collect();
 
-            for item in remove {
+            for item in &remove {
                 self.set.remove(&item);
             }
         }

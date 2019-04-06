@@ -1,4 +1,4 @@
-use crate::node::Broadcast;
+use crate::broadcast::Broadcast;
 use serde::{Deserialize, Serialize};
 
 type SeqNum = u32;

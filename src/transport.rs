@@ -1,4 +1,4 @@
-use crate::protocol::udp::Message;
+use crate::protocol::Message;
 use futures::{Poll, StartSend};
 
 pub trait Transport {
@@ -13,7 +13,7 @@ pub trait Transport {
 
 #[cfg(test)]
 pub mod mock {
-    use crate::protocol::udp::Message;
+    use crate::protocol::Message;
     use futures::{sync::mpsc, Poll, Sink, StartSend, Stream};
 
     pub struct Mock {

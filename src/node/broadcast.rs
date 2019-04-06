@@ -28,9 +28,9 @@ impl Broadcast {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LimitedBroadcast {
-    pub transmits: u64,
+    transmits: u64,
     id: u64,
-    pub broadcast: Broadcast,
+    broadcast: Broadcast,
 }
 
 // Order by number of transmits followed by decreasing id as id increases
@@ -59,6 +59,14 @@ impl PartialOrd for LimitedBroadcast {
 impl LimitedBroadcast {
     pub fn invalidates(&self, other: &LimitedBroadcast) -> bool {
         unimplemented!()
+    }
+
+    fn broadcast(&self) -> &Broadcast {
+        &self.broadcast
+    }
+
+    fn transmits(&self) -> u64 {
+        self.transmits
     }
 }
 

@@ -146,7 +146,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::Node;
-    use crate::protocol::udp::Message;
+    use crate::protocol::Message;
     use crate::transport::mock::Mock;
     use futures::{Future, Sink, Stream};
     use tokio_test::task::MockTask;

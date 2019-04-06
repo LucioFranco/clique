@@ -1,17 +1,17 @@
 use std::cmp::Ordering;
-use std::collections::hash_map::DefaultHasher;
-use std::collections::BTreeSet;
+use std::collections::{hash_map::DefaultHasher, BTreeSet};
 
 use cuckoofilter::CuckooFilter;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 // An empty struct for now.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Message {
     Joined,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Broadcast {
     uuid: Uuid,
     message: Message,
@@ -26,7 +26,7 @@ impl Broadcast {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct LimitedBroadcast {
     transmits: u64,
     id: u64,

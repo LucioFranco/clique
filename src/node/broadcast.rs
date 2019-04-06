@@ -7,10 +7,7 @@ use uuid::Uuid;
 
 // An empty struct for now.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Message;
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub enum BroadcastType {
+pub enum Message {
     Joined,
 }
 
@@ -18,15 +15,13 @@ pub enum BroadcastType {
 pub struct Broadcast {
     uuid: Uuid,
     message: Message,
-    broadcast: BroadcastType,
 }
 
 impl Broadcast {
-    pub(crate) fn new(btype: BroadcastType) -> Self {
+    pub fn new(message: Message) -> Self {
         Self {
+            message,
             uuid: Uuid::new_v4(),
-            message: Message {},
-            broadcast: btype,
         }
     }
 }
@@ -67,14 +62,14 @@ impl LimitedBroadcast {
     }
 }
 
-pub(crate) struct TransmitQueue {
+pub struct TransmitQueue {
     set: BTreeSet<LimitedBroadcast>,
     filter: CuckooFilter<DefaultHasher>,
     gen: u64,
 }
 
 impl TransmitQueue {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             filter: CuckooFilter::new(),
             set: BTreeSet::new(),
@@ -82,7 +77,7 @@ impl TransmitQueue {
         }
     }
 
-    pub(crate) fn enqueue(&mut self, broadcast: Broadcast) {
+    pub fn enqueue(&mut self, broadcast: Broadcast) {
         let uuid = broadcast.uuid;
 
         self.gen = self.gen.wrapping_add(1);
@@ -110,7 +105,7 @@ impl TransmitQueue {
         self.set.insert(limited_broadcast);
     }
 
-    pub(crate) fn get_broadcasts(&mut self) -> Vec<&LimitedBroadcast> {
+    pub fn get_broadcasts(&mut self) -> Vec<&LimitedBroadcast> {
         self.set.iter().collect()
     }
 }
@@ -121,7 +116,7 @@ mod tests {
 
     #[test]
     fn invalidate_exisitng() {
-        let broadcast = Broadcast::new(BroadcastType::Joined);
+        let broadcast = Broadcast::new(Message::Joined);
         let clone = broadcast.clone();
 
         let mut queue = TransmitQueue::new();

@@ -1,12 +1,6 @@
-mod broadcast;
-mod gossip;
-
-pub use self::broadcast::Broadcast;
-
-use crate::{protocol::udp::Message, transport::Transport};
+use crate::{broadcast::Broadcast, gossip::Gossip, protocol::Message, transport::Transport};
 use futures::{try_ready, Async, AsyncSink, Future, Poll};
 use futures::{Sink, Stream};
-use gossip::Gossip;
 use std::collections::VecDeque;
 use std::fmt;
 use std::time::Duration;

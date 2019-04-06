@@ -1,4 +1,4 @@
-use crate::protocol::udp::Message;
+use crate::protocol::Message;
 use futures::{Poll, StartSend};
 
 pub trait Transport {

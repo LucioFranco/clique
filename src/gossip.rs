@@ -1,4 +1,4 @@
-use crate::protocol::udp::Message;
+use crate::protocol::Message;
 use futures::{
     sink::SendAll,
     stream::{iter_ok, IterOk},

@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use std::collections::{hash_map::DefaultHasher, BTreeSet};
 use std::ops::Bound;
 
-use bincode::serialized_size;
+use bincode::{serialized_size, Result};
 use cuckoofilter::CuckooFilter;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -161,11 +161,10 @@ impl TransmitQueue {
             }
         }
 
-        self.filter.add(&limited_broadcast.broadcast.uuid);
-        self.set.insert(limited_broadcast);
+        self.add(limited_broadcast);
     }
 
-    pub fn get_broadcasts(&mut self, limit: u64) -> Vec<LimitedBroadcast> {
+    pub fn get_broadcasts(&mut self, limit: u64) -> Result<Vec<LimitedBroadcast>> {
         dbg!(&self.set);
         let int_max = std::u64::MAX;
         let mut used = 0;
@@ -190,54 +189,39 @@ impl TransmitQueue {
                 break;
             }
 
-            let start = dbg!(LimitedBroadcast::gen(transmits, 0, joined));
+            let start = dbg!(LimitedBroadcast::gen(transmits, int_max, joined));
             // Ranges in Rust are Include(min)..Exclude(max), so we need to add by one to get tier
             // i
-            let end = dbg!(LimitedBroadcast::gen(transmits + 1, 0, joined));
+            let end = dbg!(LimitedBroadcast::gen(transmits + 1, int_max, joined));
 
-            let mut keep = None;
+            let mut prune = vec![];
 
             for item in self.set.range(start..end) {
-                dbg!(item);
+                dbg!(&item);
                 if serialized_size(item).unwrap() > free {
                     continue;
                 }
-                keep = Some(item.clone());
-                break;
-            }
 
-            if keep.is_none() {
-                continue;
-            }
+                used += serialized_size(&item.broadcast)?;
+                broadcasts.push(item.clone());
+                prune.push(item.clone());
 
-            let mut keep = keep.unwrap();
-
-            used += match serialized_size(&keep.broadcast) {
-                Ok(n) => dbg!(n),
-                Err(e) => {
-                    eprintln!("Error figuring out size: {}", e);
-                    0
+                if item.transmits + 1 < 5 {
+                    reinsert.push(item.clone())
                 }
-            };
+            }
 
-            broadcasts.push(keep.clone());
-
-            self.delete(&keep);
-
-            // TODO: Make limit depend on number of nodes
-            if keep.transmits + 1 > 5 {
-                // don't do anything since it's already been deleted.
-            } else {
-                keep.transmits += 1;
-                reinsert.push(keep);
+            for item in prune.iter_mut() {
+                self.delete(item);
             }
         }
 
-        for item in reinsert {
+        for mut item in reinsert {
+            item.transmits += 1;
             self.add(item);
         }
 
-        broadcasts
+        Ok(broadcasts)
     }
 }
 
@@ -270,11 +254,11 @@ mod tests {
         let mut queue = TransmitQueue::new();
 
         queue.enqueue(broadcasts[0]);
-        let packet = queue.get_broadcasts(1500);
+        let packet = queue.get_broadcasts(1500).unwrap();
         assert_eq!(packet.len(), 1);
 
         queue.enqueue(broadcasts[0].clone());
-        let packet = queue.get_broadcasts(1500);
+        let packet = queue.get_broadcasts(1500).unwrap();
         assert_eq!(packet.len(), 1);
     }
 
@@ -294,7 +278,7 @@ mod tests {
         eprintln!("---------------------------------------------");
         eprintln!("---------------------------------------------");
 
-        let packet = queue.get_broadcasts(1500);
+        let packet = queue.get_broadcasts(1500).unwrap();
         assert_eq!(packet.len(), 5);
     }
 }

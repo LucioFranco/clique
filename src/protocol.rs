@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 
 type SeqNum = u32;
 
-#[derive(Debug, Eq, PartialEq, Clone)]
-pub enum Message {
+#[derive(Serialize, Deserialize, Debug, Eq, PartialEq, Clone)]
+pub enum Packet {
     Ping(SeqNum, Vec<Broadcast>),
     Ack(SeqNum, Vec<Broadcast>),
     PingReq(SeqNum, Vec<Broadcast>),

@@ -57,7 +57,7 @@ impl PartialOrd for LimitedBroadcast {
 }
 
 impl LimitedBroadcast {
-    pub fn invalidates(&self, other: &LimitedBroadcast) -> bool {
+    pub fn invalidates(&self, _other: &LimitedBroadcast) -> bool {
         unimplemented!()
     }
 

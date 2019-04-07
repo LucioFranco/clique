@@ -1,50 +1,44 @@
-use crate::{broadcast::Broadcast, gossip::Gossip, protocol::Message, transport::Transport};
+use crate::{protocol::Packet, transport::Transport};
+use futures::Stream;
 use futures::{try_ready, Async, AsyncSink, Future, Poll};
-use futures::{Sink, Stream};
 use std::collections::VecDeque;
-use std::fmt;
 use std::time::Duration;
+use tokio::timer::Interval;
 
 type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
 
 #[derive(Debug)]
 pub struct Node<T> {
     transport: T,
-    send_queue: VecDeque<(u64, Message)>,
-    gossip: Gossip,
+    send_queue: VecDeque<(u64, Packet)>,
+    gossip: Interval,
 }
 
-impl<T> Node<T>
-where
-    T: Stream<Item = (u64, Message)> + Sink<SinkItem = (u64, Message)>,
-    T::Error: fmt::Debug,
-    T::SinkError: fmt::Debug,
-{
+impl<T: Transport> Node<T> {
     pub fn new(transport: T) -> Self {
         Self {
             transport,
             send_queue: VecDeque::new(),
-            gossip: Gossip::new(Duration::from_secs(1)),
+            gossip: Interval::new_interval(Duration::from_secs(1)),
         }
     }
 
-    fn process_message(&mut self, message: Message) {
+    fn process_message(&mut self, message: Packet) {
         match message {
-            Message::Ping(seq, broadcasts) => {
+            Packet::Ping(seq, _broadcasts) => {
                 // 1. apply broadcasts
                 // 2. collect broadcasts
                 // 3. reply with ack(seq)
-                self.send_queue
-                    .push_back((1, Message::Ack(seq, Vec::new())));
+                self.send_queue.push_back((1, Packet::Ack(seq, Vec::new())));
             }
 
-            Message::Ack(seq, broadcasts) => {
+            Packet::Ack(_seq, _broadcasts) => {
                 // 1. handle incoming ack with seqnum
                 // 2. apply incoming ack
             }
 
-            Message::PingReq(seq, broadcasts) => unimplemented!(),
-            Message::NAck(seq, broadcasts) => unimplemented!(),
+            Packet::PingReq(_seq, _broadcasts) => unimplemented!(),
+            Packet::NAck(_seq, _broadcasts) => unimplemented!(),
         }
     }
 
@@ -56,7 +50,7 @@ where
     //     // try_ready!(self.gossip.poll())
     // }
 
-    fn poll_incoming_messages(&mut self) -> Poll<(), ()> {
+    fn poll_incoming_messages(&mut self) -> Poll<(), Error> {
         match self.transport.poll() {
             Ok(Async::Ready(Some((_id, msg)))) => self.process_message(msg),
             Ok(Async::Ready(None)) => unreachable!(),
@@ -67,18 +61,17 @@ where
         Ok(().into())
     }
 
-    fn poll_flush(&mut self) -> Poll<(), ()> {
+    fn poll_flush(&mut self) -> Poll<(), Error> {
         // lets keep trying to flush messages
         loop {
-            if let Some(message) = self.send_queue.pop_front() {
-                match self.transport.start_send(message) {
-                    Ok(AsyncSink::Ready) => continue,
-                    Ok(AsyncSink::NotReady(message)) => {
-                        self.send_queue.push_front(message);
+            if let Some(packet) = self.send_queue.pop_front() {
+                match self.transport.start_send(packet).map_err(Into::into)? {
+                    AsyncSink::Ready => continue,
+                    AsyncSink::NotReady(packet) => {
+                        self.send_queue.push_front(packet);
                         // TODO: return not ready?
-                        self.transport.poll_complete().unwrap();
+                        self.transport.poll_complete().map_err(Into::into)?;
                     }
-                    Err(e) => panic!("error"),
                 }
             } else {
                 return Ok(().into());
@@ -86,18 +79,15 @@ where
         }
     }
 
-    fn poll_gossip(&mut self) -> Poll<(), ()> {
-        // try_ready!(self.gossip.delay());
+    fn poll_gossip(&mut self) -> Poll<(), Error> {
+        let _ = try_ready!(self.gossip.poll());
 
-        // let peers = self.peers.sample();
-        // let fut = self.transport.ping_all(peers);
+        self.send_queue.push_back((1, Packet::Ping(1, Vec::new())));
 
-        // set state to pinging?
-        // what to do with this fut?
-        Ok(().into())
+        Ok(Async::NotReady)
     }
 
-    fn poll_probe(&mut self) -> Poll<(), ()> {
+    fn poll_probe(&mut self) -> Poll<(), Error> {
         // let peers_to_probe = self.peers.peers_to_probe();
 
         // let fut = self.transport.probe_all(peers_to_probe);
@@ -107,60 +97,91 @@ where
         Ok(().into())
     }
 
-    fn poll_rpc(&mut self) -> Poll<(), ()> {
+    fn poll_rpc(&mut self) -> Poll<(), Error> {
         // let new_peer = try_ready!(self.transport.poll_rpc());
 
         // self.peers.add(new_peer);
         Ok(().into())
     }
-}
 
-#[must_use]
-impl<T> Future for Node<T>
-where
-    T: Stream<Item = (u64, Message)> + Sink<SinkItem = (u64, Message)>,
-    T::Error: fmt::Debug,
-    T::SinkError: fmt::Debug,
-{
-    type Item = ();
-    type Error = ();
-
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+    fn poll_node(&mut self) -> Poll<(), Error> {
         // self.poll_server()
         // .map_err(|e| error!("Server Error: {}", e.into()))
 
         // Poll for any incoming messages
-        self.poll_incoming_messages();
-        self.poll_flush();
+        self.poll_incoming_messages()?;
 
-        self.poll_probe();
+        self.poll_probe()?;
 
-        self.poll_rpc();
+        self.poll_rpc()?;
 
-        self.poll_gossip();
+        self.poll_gossip()?;
+
+        // Lets try to flush all the work we've attempted to do
+        self.poll_flush()?;
 
         Ok(Async::NotReady)
+    }
+}
+
+#[must_use]
+impl<T: Transport> Future for Node<T> {
+    type Item = ();
+    type Error = ();
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        match self.poll_node() {
+            Ok(Async::Ready(_)) => unreachable!(),
+            Ok(Async::NotReady) => Ok(Async::NotReady),
+            Err(e) => panic!("Error: {}", e),
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::Node;
-    use crate::protocol::Message;
+    use crate::protocol::Packet;
     use crate::transport::mock::Mock;
     use futures::{Future, Sink, Stream};
-    use tokio_test::task::MockTask;
+    use std::time::Duration;
+    use tokio_test::{
+        task::MockTask,
+        timer::{advance, mocked},
+    };
 
     #[test]
     fn node_ping_to_ack() {
         let mut task = MockTask::new();
         let (tx, rx, mock) = Mock::new(1000);
-        let mut node = Node::new(mock);
 
-        tx.send((0, Message::Ping(1, Vec::new()))).wait();
-        assert_not_ready!(task.enter(|| node.poll()));
+        mocked(|timer, time| {
+            let mut node = Node::new(mock);
 
-        let msg = rx.wait().next().unwrap();
-        assert_eq!(msg, Ok((1, Message::Ack(1, Vec::new()))));
+            tx.send((0, Packet::Ping(1, Vec::new()))).wait().unwrap();
+            assert_not_ready!(task.enter(|| node.poll()));
+
+            let msg = rx.wait().next().unwrap();
+            assert_eq!(msg, Ok((1, Packet::Ack(1, Vec::new()))));
+        });
+    }
+
+    #[test]
+    fn node_gossip() {
+        let mut task = MockTask::new();
+        let (tx, mut rx, mock) = Mock::new(1000);
+
+        mocked(|timer, time| {
+            let mut node = Node::new(mock);
+
+            assert_not_ready!(task.enter(|| node.poll()));
+
+            assert_not_ready!(rx.poll());
+
+            advance(timer, Duration::from_secs(1));
+
+            assert_not_ready!(task.enter(|| node.poll()));
+            assert_ready!(rx.poll());
+        });
     }
 }

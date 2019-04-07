@@ -160,39 +160,39 @@ mod tests {
     #[test]
     fn node_ping_to_ack() {
         let mut task = MockTask::new();
-        let (tx, rx, mock) = Mock::new(1000);
+        let (mut handle, mock) = Mock::new(1000);
 
         mocked(|timer, time| {
             let mut node = Node::new(mock);
             let addr = "127.0.0.1:8888".parse().unwrap();
 
             let ping = Packet::ping(addr, 1, Vec::new());
-            tx.send(ping).wait().unwrap();
+            handle.send(ping);
             assert_not_ready!(task.enter(|| node.poll()));
 
-            let msg = rx.wait().next().unwrap();
+            let msg = handle.get();
             let expected = Packet::ack(addr, 1, Vec::new());
-            assert_eq!(msg, Ok(expected));
+            assert_eq!(msg, Some(expected));
         });
     }
 
     #[test]
     fn node_gossip() {
         let mut task = MockTask::new();
-        let (tx, mut rx, mock) = Mock::new(1000);
+        let (mut handle, mock) = Mock::new(1000);
 
         mocked(|timer, time| {
             let mut node = Node::new(mock);
 
             assert_not_ready!(task.enter(|| node.poll()));
 
-            assert_not_ready!(rx.poll());
+            assert_not_ready!(handle.poll());
 
             advance(timer, Duration::from_secs(1));
             assert!(task.is_notified());
 
             assert_not_ready!(task.enter(|| node.poll()));
-            assert_ready!(rx.poll());
+            assert_ready!(handle.poll());
         });
     }
 }

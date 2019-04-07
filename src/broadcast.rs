@@ -11,6 +11,8 @@ use uuid::Uuid;
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Message {
     Joined,
+    Alive,
+    Leave,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -42,18 +44,24 @@ pub struct LimitedBroadcast {
 // - [transmits=0:id=999, ..., transmits=0:id=1, ...]
 impl Ord for LimitedBroadcast {
     fn cmp(&self, other: &LimitedBroadcast) -> Ordering {
+        dbg!((self.transmits, self.id, other.transmits, other.id));
         if self.transmits < other.transmits {
-            println!("Returning less");
+            dbg!("Returning less");
             return Ordering::Less;
-        } else if self.transmits > other.transmits {
-            println!("Returning greater");
+        }
+
+        if self.transmits > other.transmits {
+            dbg!("Returning greater");
             return Ordering::Greater;
         }
 
+        dbg!((self.id, other.id));
         if self.id < other.id {
-            return Ordering::Less;
-        } else if self.id > other.id {
+            dbg!("Returning greater");
             return Ordering::Greater;
+        } else if self.id > other.id {
+            dbg!("Returning less");
+            return Ordering::Less;
         }
 
         Ordering::Equal
@@ -62,7 +70,7 @@ impl Ord for LimitedBroadcast {
 
 impl PartialEq for LimitedBroadcast {
     fn eq(&self, other: &LimitedBroadcast) -> bool {
-        self.transmits == other.transmits && self.id == other.id
+        dbg!(self.transmits == other.transmits && self.id == other.id)
     }
 }
 
@@ -115,6 +123,20 @@ impl TransmitQueue {
         }
     }
 
+    fn add(&mut self, val: LimitedBroadcast) {
+        self.filter.add(&val.broadcast.uuid);
+        self.set.insert(val);
+    }
+
+    fn delete(&mut self, val: &LimitedBroadcast) {
+        self.filter.delete(&val.broadcast.uuid);
+        self.set.remove(&val);
+
+        if self.set.len() == 0 {
+            self.gen = 0;
+        }
+    }
+
     pub fn enqueue(&mut self, broadcast: Broadcast) {
         let uuid = broadcast.uuid;
 
@@ -144,36 +166,34 @@ impl TransmitQueue {
     }
 
     pub fn get_broadcasts(&mut self, limit: u64) -> Vec<LimitedBroadcast> {
-        dbg!(limit);
+        dbg!(&self.set);
         let int_max = std::u64::MAX;
         let mut used = 0;
 
-        let mut reinsert: Vec<LimitedBroadcast> = vec![];
-        let mut broadcasts: Vec<LimitedBroadcast> = vec![];
+        let mut reinsert = vec![];
+        let mut broadcasts = vec![];
 
         let joined = Broadcast::new(Message::Joined);
 
         let min_item = LimitedBroadcast::gen(0, int_max, joined);
         let max_item = LimitedBroadcast::gen(int_max, int_max, joined);
 
-        let min = dbg!(self.set.iter().next().unwrap_or(&min_item));
-        let max = dbg!(self.set.iter().next_back().unwrap_or(&max_item));
+        let min = self.set.iter().next().unwrap_or(&min_item).transmits;
+        let max = self.set.iter().next_back().unwrap_or(&max_item).transmits;
 
-        for i in min.transmits..max.transmits + 1 {
-            let free = limit - used;
+        for transmits in min..max + 1 {
+            let free = limit - dbg!(used);
 
-            dbg!((i, free));
+            dbg!((transmits, free));
 
             if free <= 0 {
                 break;
             }
 
-            let start = dbg!(LimitedBroadcast::gen(i, int_max, joined));
+            let start = dbg!(LimitedBroadcast::gen(transmits, 0, joined));
             // Ranges in Rust are Include(min)..Exclude(max), so we need to add by one to get tier
             // i
-            let end = dbg!(LimitedBroadcast::gen(i + 1, int_max, joined));
-
-            dbg!(&self.set);
+            let end = dbg!(LimitedBroadcast::gen(transmits + 1, 0, joined));
 
             let mut keep = None;
 
@@ -192,8 +212,8 @@ impl TransmitQueue {
 
             let mut keep = keep.unwrap();
 
-            used += match serialized_size(&keep) {
-                Ok(n) => n,
+            used += match serialized_size(&keep.broadcast) {
+                Ok(n) => dbg!(n),
                 Err(e) => {
                     eprintln!("Error figuring out size: {}", e);
                     0
@@ -202,8 +222,7 @@ impl TransmitQueue {
 
             broadcasts.push(keep.clone());
 
-            self.set.remove(&keep);
-            self.filter.delete(&keep.broadcast.uuid);
+            self.delete(&keep);
 
             // TODO: Make limit depend on number of nodes
             if keep.transmits + 1 > 5 {
@@ -215,8 +234,7 @@ impl TransmitQueue {
         }
 
         for item in reinsert {
-            self.filter.add(&item.broadcast.uuid);
-            self.set.insert(item);
+            self.add(item);
         }
 
         broadcasts
@@ -226,27 +244,57 @@ impl TransmitQueue {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::{
+        self,
+        distributions::{Distribution, Standard},
+        Rng,
+    };
+
+    impl Distribution<Message> for Standard {
+        fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Message {
+            match rng.gen_range(0, 3) {
+                0 => Message::Joined,
+                1 => Message::Alive,
+                _ => Message::Leave,
+            }
+        }
+    }
+
+    fn gen_broadcasts(n: usize) -> Vec<Broadcast> {
+        (0..n + 1).map(|_| Broadcast::new(rand::random())).collect()
+    }
 
     #[test]
-    fn invalidate_exisitng() {
-        let broadcast = Broadcast::new(Message::Joined);
-        let clone = broadcast.clone();
-
-        let second = Broadcast::new(Message::Joined);
-
+    fn invalidate_existing() {
+        let broadcasts = gen_broadcasts(1);
         let mut queue = TransmitQueue::new();
 
-        queue.enqueue(broadcast);
-        queue.enqueue(second);
+        queue.enqueue(broadcasts[0]);
+        let packet = queue.get_broadcasts(1500);
+        assert_eq!(packet.len(), 1);
 
-        let broadcasts = queue.get_broadcasts(1500);
+        queue.enqueue(broadcasts[0].clone());
+        let packet = queue.get_broadcasts(1500);
+        assert_eq!(packet.len(), 1);
+    }
 
-        assert_eq!(broadcasts.len(), 1);
+    #[test]
+    fn get_to_limit() {
+        let broadcasts = gen_broadcasts(5);
+        let mut queue = TransmitQueue::new();
 
-        queue.enqueue(clone);
+        queue.enqueue(broadcasts[0]);
+        queue.enqueue(broadcasts[1]);
+        queue.enqueue(broadcasts[2]);
+        queue.enqueue(broadcasts[3]);
+        queue.enqueue(broadcasts[4]);
 
-        let broadcasts = queue.get_broadcasts(1500);
+        eprintln!("---------------------------------------------");
+        eprintln!("---------------------------------------------");
+        eprintln!("---------------------------------------------");
+        eprintln!("---------------------------------------------");
 
-        assert_eq!(broadcasts.len(), 1);
+        let packet = queue.get_broadcasts(1500);
+        assert_eq!(packet.len(), 5);
     }
 }

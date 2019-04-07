@@ -18,6 +18,7 @@ cuckoofilter = "0.3"
 indexmap = "1.0"
 rand = "0.6"
 bincode = "1.1"
+rand = "0.6"
 
 [dev-dependencies]
 tokio-test = { git = "https://github.com/LucioFranco/tokio", branch = "tokio-test" }

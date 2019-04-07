@@ -179,6 +179,7 @@ mod tests {
             assert_not_ready!(rx.poll());
 
             advance(timer, Duration::from_secs(1));
+            assert!(task.is_notified());
 
             assert_not_ready!(task.enter(|| node.poll()));
             assert_ready!(rx.poll());

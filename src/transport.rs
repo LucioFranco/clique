@@ -1,36 +1,36 @@
 use crate::protocol::Packet;
 use futures::{Poll, Sink, StartSend, Stream};
+use std::net::SocketAddr;
 
 #[allow(unused)]
 type Error = Box<std::error::Error + Sync + Send + 'static>;
-type Message = (u64, Packet);
 
 pub trait Transport {
     type Error: Into<Error>;
 
-    fn start_send(&mut self, message: Message) -> StartSend<Message, Self::Error>;
+    fn start_send(&mut self, item: Packet) -> StartSend<Packet, Self::Error>;
 
     fn poll_complete(&mut self) -> Poll<(), Self::Error>;
 
-    fn poll(&mut self) -> Poll<Option<Message>, Self::Error>;
+    fn poll(&mut self) -> Poll<Option<Packet>, Self::Error>;
 }
 
 impl<T> Transport for T
 where
-    T: Stream<Item = Message> + Sink<SinkItem = Message, SinkError = <T as Stream>::Error>,
+    T: Stream<Item = Packet> + Sink<SinkItem = Packet, SinkError = <T as Stream>::Error>,
     T::Error: Into<Error>,
 {
     type Error = T::Error;
 
-    fn start_send(&mut self, message: Message) -> StartSend<Message, Self::Error> {
-        self.start_send(message)
+    fn start_send(&mut self, item: Packet) -> StartSend<Packet, Self::Error> {
+        self.start_send(item)
     }
 
     fn poll_complete(&mut self) -> Poll<(), Self::Error> {
         self.poll_complete()
     }
 
-    fn poll(&mut self) -> Poll<Option<Message>, Self::Error> {
+    fn poll(&mut self) -> Poll<Option<Packet>, Self::Error> {
         self.poll()
     }
 }
@@ -41,11 +41,9 @@ pub mod mock {
     use futures::{sync::mpsc, Poll, Sink, StartSend, Stream};
     use std::fmt;
 
-    type Message = (u64, Packet);
-
     pub struct Mock {
-        tx: mpsc::Sender<Message>,
-        rx: mpsc::Receiver<Message>,
+        tx: mpsc::Sender<Packet>,
+        rx: mpsc::Receiver<Packet>,
     }
 
     pub enum MockError<T> {
@@ -54,7 +52,7 @@ pub mod mock {
     }
 
     impl Mock {
-        pub fn new(limit: usize) -> (mpsc::Sender<Message>, mpsc::Receiver<Message>, Self) {
+        pub fn new(limit: usize) -> (mpsc::Sender<Packet>, mpsc::Receiver<Packet>, Self) {
             let (tx1, rx1) = mpsc::channel(limit);
             let (tx2, rx2) = mpsc::channel(limit);
 
@@ -65,7 +63,7 @@ pub mod mock {
     }
 
     impl Sink for Mock {
-        type SinkItem = Message;
+        type SinkItem = Packet;
         type SinkError = MockError<Self::SinkItem>;
 
         fn start_send(
@@ -81,7 +79,7 @@ pub mod mock {
     }
 
     impl Stream for Mock {
-        type Item = Message;
+        type Item = Packet;
         type Error = MockError<Self::Item>;
 
         fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {

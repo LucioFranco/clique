@@ -1,17 +1,21 @@
-use crate::{protocol::Packet, transport::Transport};
-use futures::Stream;
-use futures::{try_ready, Async, AsyncSink, Future, Poll};
-use std::collections::VecDeque;
-use std::time::Duration;
-use tokio::timer::Interval;
+use crate::{
+    peer::Peer,
+    protocol::{Packet, PacketKind},
+    transport::Transport,
+};
+use futures::{try_ready, Async, AsyncSink, Future, Poll, Stream};
+use indexmap::IndexMap;
+use std::{collections::VecDeque, net::SocketAddr, time::Duration};
+use tokio_timer::Interval;
 
 type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
 
 #[derive(Debug)]
 pub struct Node<T> {
     transport: T,
-    send_queue: VecDeque<(u64, Packet)>,
+    send_queue: VecDeque<Packet>,
     gossip: Interval,
+    peers: IndexMap<SocketAddr, Peer>,
 }
 
 impl<T: Transport> Node<T> {
@@ -20,25 +24,27 @@ impl<T: Transport> Node<T> {
             transport,
             send_queue: VecDeque::new(),
             gossip: Interval::new_interval(Duration::from_secs(1)),
+            peers: IndexMap::new(),
         }
     }
 
     fn process_message(&mut self, message: Packet) {
-        match message {
-            Packet::Ping(seq, _broadcasts) => {
+        match message.kind() {
+            PacketKind::Ping => {
                 // 1. apply broadcasts
                 // 2. collect broadcasts
                 // 3. reply with ack(seq)
-                self.send_queue.push_back((1, Packet::Ack(seq, Vec::new())));
+                let packet = Packet::ack(message.addr(), message.seq(), Vec::new());
+                self.send_queue.push_back(packet);
             }
 
-            Packet::Ack(_seq, _broadcasts) => {
+            PacketKind::Ack => {
                 // 1. handle incoming ack with seqnum
                 // 2. apply incoming ack
             }
 
-            Packet::PingReq(_seq, _broadcasts) => unimplemented!(),
-            Packet::NAck(_seq, _broadcasts) => unimplemented!(),
+            PacketKind::PingReq => unimplemented!(),
+            PacketKind::NAck => unimplemented!(),
         }
     }
 
@@ -52,7 +58,7 @@ impl<T: Transport> Node<T> {
 
     fn poll_incoming_messages(&mut self) -> Poll<(), Error> {
         match self.transport.poll() {
-            Ok(Async::Ready(Some((_id, msg)))) => self.process_message(msg),
+            Ok(Async::Ready(Some(msg))) => self.process_message(msg),
             Ok(Async::Ready(None)) => unreachable!(),
             Ok(Async::NotReady) => return Ok(Async::NotReady),
             Err(_) => panic!(),
@@ -82,7 +88,8 @@ impl<T: Transport> Node<T> {
     fn poll_gossip(&mut self) -> Poll<(), Error> {
         let _ = try_ready!(self.gossip.poll());
 
-        self.send_queue.push_back((1, Packet::Ping(1, Vec::new())));
+        let addr = "127.0.0.1:8888".parse().unwrap();
+        self.send_queue.push_back(Packet::ping(addr, 1, Vec::new()));
 
         Ok(Async::NotReady)
     }
@@ -153,36 +160,39 @@ mod tests {
     #[test]
     fn node_ping_to_ack() {
         let mut task = MockTask::new();
-        let (tx, rx, mock) = Mock::new(1000);
+        let (mut handle, mock) = Mock::new(1000);
 
         mocked(|timer, time| {
             let mut node = Node::new(mock);
+            let addr = "127.0.0.1:8888".parse().unwrap();
 
-            tx.send((0, Packet::Ping(1, Vec::new()))).wait().unwrap();
+            let ping = Packet::ping(addr, 1, Vec::new());
+            handle.send(ping);
             assert_not_ready!(task.enter(|| node.poll()));
 
-            let msg = rx.wait().next().unwrap();
-            assert_eq!(msg, Ok((1, Packet::Ack(1, Vec::new()))));
+            let msg = handle.get();
+            let expected = Packet::ack(addr, 1, Vec::new());
+            assert_eq!(msg, Some(expected));
         });
     }
 
     #[test]
     fn node_gossip() {
         let mut task = MockTask::new();
-        let (tx, mut rx, mock) = Mock::new(1000);
+        let (mut handle, mock) = Mock::new(1000);
 
         mocked(|timer, time| {
             let mut node = Node::new(mock);
 
             assert_not_ready!(task.enter(|| node.poll()));
 
-            assert_not_ready!(rx.poll());
+            assert_not_ready!(handle.poll());
 
             advance(timer, Duration::from_secs(1));
             assert!(task.is_notified());
 
             assert_not_ready!(task.enter(|| node.poll()));
-            assert_ready!(rx.poll());
+            assert_ready!(handle.poll());
         });
     }
 }

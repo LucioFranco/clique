@@ -1,36 +1,36 @@
 use crate::protocol::Packet;
 use futures::{Poll, Sink, StartSend, Stream};
+use std::net::SocketAddr;
 
 #[allow(unused)]
 type Error = Box<std::error::Error + Sync + Send + 'static>;
-type Message = (u64, Packet);
 
 pub trait Transport {
     type Error: Into<Error>;
 
-    fn start_send(&mut self, message: Message) -> StartSend<Message, Self::Error>;
+    fn start_send(&mut self, item: Packet) -> StartSend<Packet, Self::Error>;
 
     fn poll_complete(&mut self) -> Poll<(), Self::Error>;
 
-    fn poll(&mut self) -> Poll<Option<Message>, Self::Error>;
+    fn poll(&mut self) -> Poll<Option<Packet>, Self::Error>;
 }
 
 impl<T> Transport for T
 where
-    T: Stream<Item = Message> + Sink<SinkItem = Message, SinkError = <T as Stream>::Error>,
+    T: Stream<Item = Packet> + Sink<SinkItem = Packet, SinkError = <T as Stream>::Error>,
     T::Error: Into<Error>,
 {
     type Error = T::Error;
 
-    fn start_send(&mut self, message: Message) -> StartSend<Message, Self::Error> {
-        self.start_send(message)
+    fn start_send(&mut self, item: Packet) -> StartSend<Packet, Self::Error> {
+        self.start_send(item)
     }
 
     fn poll_complete(&mut self) -> Poll<(), Self::Error> {
         self.poll_complete()
     }
 
-    fn poll(&mut self) -> Poll<Option<Message>, Self::Error> {
+    fn poll(&mut self) -> Poll<Option<Packet>, Self::Error> {
         self.poll()
     }
 }
@@ -38,14 +38,22 @@ where
 #[cfg(test)]
 pub mod mock {
     use crate::protocol::Packet;
-    use futures::{sync::mpsc, Poll, Sink, StartSend, Stream};
-    use std::fmt;
+    use futures::{future::poll_fn, sync::mpsc, Future, Poll, Sink, StartSend, Stream};
+    use std::{
+        fmt,
+        sync::{Arc, Mutex},
+    };
 
-    type Message = (u64, Packet);
-
+    #[derive(Debug)]
     pub struct Mock {
-        tx: mpsc::Sender<Message>,
-        rx: mpsc::Receiver<Message>,
+        tx: mpsc::Sender<Packet>,
+        rx: mpsc::Receiver<Packet>,
+    }
+
+    #[derive(Clone, Debug)]
+    pub struct Handle {
+        tx: mpsc::Sender<Packet>,
+        rx: Arc<Mutex<mpsc::Receiver<Packet>>>,
     }
 
     pub enum MockError<T> {
@@ -54,18 +62,47 @@ pub mod mock {
     }
 
     impl Mock {
-        pub fn new(limit: usize) -> (mpsc::Sender<Message>, mpsc::Receiver<Message>, Self) {
+        pub fn new(limit: usize) -> (Handle, Mock) {
             let (tx1, rx1) = mpsc::channel(limit);
             let (tx2, rx2) = mpsc::channel(limit);
 
-            let this = Self { tx: tx1, rx: rx2 };
+            let mock = Mock { tx: tx1, rx: rx2 };
+            let handle = Handle {
+                tx: tx2,
+                rx: Arc::new(Mutex::new(rx1)),
+            };
 
-            (tx2, rx1, this)
+            (handle, mock)
+        }
+    }
+
+    impl Handle {
+        pub fn send(&mut self, item: Packet) -> Result<(), mpsc::SendError<Packet>> {
+            let mut item = Some(item);
+
+            while let Some(i) = item.take() {
+                use futures::AsyncSink::*;
+                if let NotReady(i) = self.tx.start_send(i)? {
+                    item = Some(i)
+                }
+
+                poll_fn(|| self.tx.poll_complete()).wait()?;
+            }
+
+            poll_fn(|| self.tx.poll_complete()).wait()
+        }
+
+        pub fn poll(&mut self) -> Poll<Option<Packet>, ()> {
+            self.rx.lock().unwrap().poll()
+        }
+
+        pub fn get(&mut self) -> Option<Packet> {
+            poll_fn(|| self.rx.lock().unwrap().poll()).wait().unwrap()
         }
     }
 
     impl Sink for Mock {
-        type SinkItem = Message;
+        type SinkItem = Packet;
         type SinkError = MockError<Self::SinkItem>;
 
         fn start_send(
@@ -81,7 +118,7 @@ pub mod mock {
     }
 
     impl Stream for Mock {
-        type Item = Message;
+        type Item = Packet;
         type Error = MockError<Self::Item>;
 
         fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {

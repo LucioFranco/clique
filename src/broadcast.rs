@@ -109,6 +109,9 @@ pub struct TransmitQueue {
     gen: u64,
 }
 
+/// TransmitQueue is used to queue messages to broadcast to the cluster but limits the number of
+/// transmits per message. It prioritizes messages with lower transmit counts and newer version of
+/// the same message. This means that the items yielded by the queue will be ordered newest first.
 impl TransmitQueue {
     pub fn new() -> Self {
         Self {
@@ -118,15 +121,18 @@ impl TransmitQueue {
         }
     }
 
-    fn len(&self) -> usize {
+    /// Return the number of elements currently present in the queue.
+    pub fn len(&self) -> usize {
         self.set.len()
     }
 
+    /// Add the given `LimitedBroadcast` to the queue.
     fn add(&mut self, val: LimitedBroadcast) {
         self.filter.add(&val.broadcast.uuid);
         self.set.insert(val);
     }
 
+    /// Remove the given `LimitedBroadcast` from the queue.
     fn delete(&mut self, val: &LimitedBroadcast) {
         self.filter.delete(&val.broadcast.uuid);
         self.set.remove(&val);

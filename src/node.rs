@@ -1,4 +1,5 @@
 use crate::{
+    list::PeerList,
     peer::Peer,
     protocol::{Packet, PacketKind},
     transport::Transport,
@@ -15,7 +16,7 @@ pub struct Node<T> {
     transport: T,
     send_queue: VecDeque<Packet>,
     gossip: Interval,
-    peers: IndexMap<SocketAddr, Peer>,
+    peers: PeerList,
 }
 
 impl<T: Transport> Node<T> {
@@ -24,7 +25,7 @@ impl<T: Transport> Node<T> {
             transport,
             send_queue: VecDeque::new(),
             gossip: Interval::new_interval(Duration::from_secs(1)),
-            peers: IndexMap::new(),
+            peers: PeerList::new(),
         }
     }
 
@@ -167,7 +168,7 @@ mod tests {
             let addr = "127.0.0.1:8888".parse().unwrap();
 
             let ping = Packet::ping(addr, 1, Vec::new());
-            handle.send(ping);
+            handle.send(ping).unwrap();
             assert_not_ready!(task.enter(|| node.poll()));
 
             let msg = handle.get();

@@ -6,6 +6,7 @@
 extern crate tokio_test;
 
 mod broadcast;
+mod list;
 mod node;
 mod peer;
 mod protocol;

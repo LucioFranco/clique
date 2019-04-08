@@ -1,6 +1,5 @@
 use std::cmp::Ordering;
 use std::collections::{hash_map::DefaultHasher, BTreeSet};
-use std::ops::Bound;
 
 use bincode::{serialized_size, Result};
 use cuckoofilter::CuckooFilter;
@@ -15,7 +14,7 @@ pub enum Message {
     Leave,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Broadcast {
     uuid: Uuid,
     message: Message,
@@ -46,20 +45,16 @@ impl Ord for LimitedBroadcast {
     fn cmp(&self, other: &LimitedBroadcast) -> Ordering {
         if self.transmits < other.transmits {
             return Ordering::Less;
-        }
-
-        if self.transmits > other.transmits {
+        } else if self.transmits > other.transmits {
             return Ordering::Greater;
-        }
-
-        if self.id < other.id {
+        } else if self.id < other.id {
             return Ordering::Greater;
         } else if self.id > other.id {
             return Ordering::Less;
+        } else {
+            // Never going to happen as id is monotonically increasing.
+            Ordering::Equal
         }
-
-        // Never going to happen as id is monotonically increasing.
-        Ordering::Equal
     }
 }
 
@@ -94,7 +89,7 @@ impl LimitedBroadcast {
         self.transmits
     }
 
-    fn gen(transmits: u64, id: u64, broadcast: Broadcast) -> Self {
+    fn gen(transmits: u64, id: u64, broadcast: Broadcast) -> LimitedBroadcast {
         Self {
             transmits,
             id,
@@ -137,7 +132,7 @@ impl TransmitQueue {
         self.filter.delete(&val.broadcast.uuid);
         self.set.remove(&val);
 
-        if self.set.len() == 0 {
+        if self.set.is_empty() {
             self.gen = 0;
         }
     }
@@ -183,8 +178,8 @@ impl TransmitQueue {
 
         let joined = Broadcast::new(Message::Joined);
 
-        let min_item = LimitedBroadcast::gen(0, int_max, joined);
-        let max_item = LimitedBroadcast::gen(int_max, int_max, joined);
+        let min_item = LimitedBroadcast::gen(0, int_max, joined.clone());
+        let max_item = LimitedBroadcast::gen(int_max, int_max, joined.clone());
 
         let min = self.set.iter().next().unwrap_or(&min_item).transmits;
         let max = self.set.iter().next_back().unwrap_or(&max_item).transmits;
@@ -202,10 +197,10 @@ impl TransmitQueue {
                 break;
             }
 
-            let start = LimitedBroadcast::gen(transmits, int_max, joined);
+            let start = LimitedBroadcast::gen(transmits, int_max, joined.clone());
             // Ranges in Rust are Include(min)..Exclude(max), so we need to add by one to get tier
             // i
-            let end = LimitedBroadcast::gen(transmits + 1, int_max, joined);
+            let end = LimitedBroadcast::gen(transmits + 1, int_max, joined.clone());
 
             let mut prune = vec![];
 
@@ -274,7 +269,7 @@ mod tests {
         let broadcasts = gen_broadcasts(1);
         let mut queue = TransmitQueue::new();
 
-        queue.enqueue(broadcasts[0]);
+        queue.enqueue(broadcasts[0].clone());
         let packet = queue.get_broadcasts(1500).unwrap();
         assert_eq!(packet.len(), 1);
 
@@ -309,7 +304,7 @@ mod tests {
         let mut counter = 0;
 
         while queue.len() > 0 {
-            let _packets = dbg!(queue.get_broadcasts(size * num_broadcasts).unwrap());
+            let _packets = queue.get_broadcasts(size * num_broadcasts).unwrap();
             counter += 1;
         }
 

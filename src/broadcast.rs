@@ -44,33 +44,28 @@ pub struct LimitedBroadcast {
 // - [transmits=0:id=999, ..., transmits=0:id=1, ...]
 impl Ord for LimitedBroadcast {
     fn cmp(&self, other: &LimitedBroadcast) -> Ordering {
-        dbg!((self.transmits, self.id, other.transmits, other.id));
         if self.transmits < other.transmits {
-            dbg!("Returning less");
             return Ordering::Less;
         }
 
         if self.transmits > other.transmits {
-            dbg!("Returning greater");
             return Ordering::Greater;
         }
 
-        dbg!((self.id, other.id));
         if self.id < other.id {
-            dbg!("Returning greater");
             return Ordering::Greater;
         } else if self.id > other.id {
-            dbg!("Returning less");
             return Ordering::Less;
         }
 
+        // Never going to happen as id is monotonically increasing.
         Ordering::Equal
     }
 }
 
 impl PartialEq for LimitedBroadcast {
     fn eq(&self, other: &LimitedBroadcast) -> bool {
-        dbg!(self.transmits == other.transmits && self.id == other.id)
+        self.transmits == other.transmits && self.id == other.id
     }
 }
 
@@ -123,6 +118,10 @@ impl TransmitQueue {
         }
     }
 
+    fn len(&self) -> usize {
+        self.set.len()
+    }
+
     fn add(&mut self, val: LimitedBroadcast) {
         self.filter.add(&val.broadcast.uuid);
         self.set.insert(val);
@@ -137,6 +136,8 @@ impl TransmitQueue {
         }
     }
 
+    /// Enqueues a broadcast to be disseminated. If a Broadcast with the same UUID already exists,
+    /// it will be removed and the new version will be inserted.
     pub fn enqueue(&mut self, broadcast: Broadcast) {
         let uuid = broadcast.uuid;
 
@@ -164,10 +165,12 @@ impl TransmitQueue {
         self.add(limited_broadcast);
     }
 
+    /// Returns a list of `LimitedBroadcast`s ordered by newest first. The limit parameter limits
+    /// the total number of `LimitedBroadcast`s returned. The size being counted is the
+    /// `serialized_size` of the `Broadcast` type.
     pub fn get_broadcasts(&mut self, limit: u64) -> Result<Vec<LimitedBroadcast>> {
-        dbg!(&self.set);
         let int_max = std::u64::MAX;
-        let mut used = 0;
+        let mut used: i64 = 0;
 
         let mut reinsert = vec![];
         let mut broadcasts = vec![];
@@ -180,33 +183,36 @@ impl TransmitQueue {
         let min = self.set.iter().next().unwrap_or(&min_item).transmits;
         let max = self.set.iter().next_back().unwrap_or(&max_item).transmits;
 
+        // Try to get all transmits within a given tier.
         for transmits in min..max + 1 {
-            let free = limit - dbg!(used);
-
-            dbg!((transmits, free));
+            let mut free: i64 = limit as i64 - used;
 
             if free <= 0 {
                 break;
             }
 
-            let start = dbg!(LimitedBroadcast::gen(transmits, int_max, joined));
+            let start = LimitedBroadcast::gen(transmits, int_max, joined);
             // Ranges in Rust are Include(min)..Exclude(max), so we need to add by one to get tier
             // i
-            let end = dbg!(LimitedBroadcast::gen(transmits + 1, int_max, joined));
+            let end = LimitedBroadcast::gen(transmits + 1, int_max, joined);
 
             let mut prune = vec![];
 
             for item in self.set.range(start..end) {
-                dbg!(&item);
-                if serialized_size(item).unwrap() > free {
+                let size = serialized_size(&item.broadcast)? as i64;
+                if size as i64 > free {
                     continue;
                 }
 
-                used += serialized_size(&item.broadcast)?;
+                // Update sizes
+                used += serialized_size(&item.broadcast)? as i64;
+                free -= size;
+
                 broadcasts.push(item.clone());
                 prune.push(item.clone());
 
-                if item.transmits + 1 < 5 {
+                // TODO: make this parameter configurable
+                if item.transmits + 1 <= 5 {
                     reinsert.push(item.clone())
                 }
             }
@@ -245,7 +251,7 @@ mod tests {
     }
 
     fn gen_broadcasts(n: usize) -> Vec<Broadcast> {
-        (0..n + 1).map(|_| Broadcast::new(rand::random())).collect()
+        (0..n).map(|_| Broadcast::new(rand::random())).collect()
     }
 
     #[test]
@@ -265,20 +271,36 @@ mod tests {
     #[test]
     fn get_to_limit() {
         let broadcasts = gen_broadcasts(5);
+        let num_broadcasts = 3;
+        let size = serialized_size(&Broadcast::new(Message::Joined)).unwrap();
+
         let mut queue = TransmitQueue::new();
 
-        queue.enqueue(broadcasts[0]);
-        queue.enqueue(broadcasts[1]);
-        queue.enqueue(broadcasts[2]);
-        queue.enqueue(broadcasts[3]);
-        queue.enqueue(broadcasts[4]);
+        broadcasts.into_iter().for_each(|b| queue.enqueue(b));
 
-        eprintln!("---------------------------------------------");
-        eprintln!("---------------------------------------------");
-        eprintln!("---------------------------------------------");
-        eprintln!("---------------------------------------------");
+        let packets = queue.get_broadcasts(size * num_broadcasts).unwrap();
+        assert_eq!(packets.len(), num_broadcasts as usize);
+    }
 
-        let packet = queue.get_broadcasts(1500).unwrap();
-        assert_eq!(packet.len(), 5);
+    #[test]
+    fn empty_queue() {
+        let broadcasts = gen_broadcasts(5);
+        let num_broadcasts = 3;
+        let size = serialized_size(&Broadcast::new(Message::Joined)).unwrap();
+
+        let mut queue = TransmitQueue::new();
+
+        broadcasts.into_iter().for_each(|b| queue.enqueue(b));
+        let mut counter = 0;
+
+        while queue.len() > 0 {
+            let _packets = dbg!(queue.get_broadcasts(size * num_broadcasts).unwrap());
+            counter += 1;
+        }
+
+        // This is based on the hard coded limit of 5 transmits per broadcast. We have 5 items in
+        // the queue, `get_broadcast` call gets 3 items of 1 tier, followed by 2 items of 1 tier
+        // and 1 item of the next tier, and takes 10 calls to empty the queue.
+        assert_eq!(counter, 10);
     }
 }

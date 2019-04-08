@@ -23,3 +23,4 @@ rand = "0.6"
 [dev-dependencies]
 tokio-test = { git = "https://github.com/LucioFranco/tokio", branch = "tokio-test" }
 quickcheck = "0.8"
+quickcheck_macros = "0.8"

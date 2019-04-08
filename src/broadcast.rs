@@ -183,7 +183,12 @@ impl TransmitQueue {
         let min = self.set.iter().next().unwrap_or(&min_item).transmits;
         let max = self.set.iter().next_back().unwrap_or(&max_item).transmits;
 
-        // Try to get all transmits within a given tier.
+        // Try to get all transmits within a given tier. We do this by getting the min and max
+        // number of transmits in the queue, and iterating over each transmit tier. Each iteration
+        // of this loop, we see if there are any broadcasts which fit the remaining size in the
+        // given transmit tier and add it to the `broadcasts` vec. These items are added to the
+        // prune list. If the item hasn't been transmitted `limit` (currently 5) times, it is
+        // reinserted into the queue.
         for transmits in min..max + 1 {
             let mut free: i64 = limit as i64 - used;
 
@@ -213,6 +218,9 @@ impl TransmitQueue {
 
                 // TODO: make this parameter configurable
                 if item.transmits + 1 <= 5 {
+                    // We reinsert after the broadcasts vec if filled as if we reinsert into the
+                    // queue here, the next iteration of the loop might consider the same item
+                    // again.
                     reinsert.push(item.clone())
                 }
             }

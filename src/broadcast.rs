@@ -167,8 +167,8 @@ impl TransmitQueue {
     }
 
     /// Returns a list of `Broadcast`s ordered by newest first. The number of values returned
-    /// is limited by the `limit` parameter which limits the toal size of the resultant Vec.
-    pub fn get_broadcasts(&mut self, limit: u64) -> Result<Vec<Broadcast>> {
+    /// is limited by the `size_limit` parameter which limits the toal size of the resultant Vec.
+    pub fn get_broadcasts(&mut self, size_limit: usize) -> Result<Vec<Broadcast>> {
         let int_max = std::u64::MAX;
         let mut used: i64 = 0;
 
@@ -191,10 +191,10 @@ impl TransmitQueue {
         // number of transmits in the queue, and iterating over each transmit tier. Each iteration
         // of this loop, we see if there are any broadcasts which fit the remaining size in the
         // given transmit tier and add it to the `broadcasts` vec. These items are added to the
-        // prune list. If the item hasn't been transmitted `limit` (currently 5) times, it is
+        // prune list. If the item hasn't been transmitted `size_limit` (currently 5) times, it is
         // reinserted into the queue.
         for transmits in min..max + 1 {
-            let mut free: i64 = limit as i64 - used;
+            let mut free: i64 = size_limit as i64 - used;
 
             if free <= 0 {
                 break;
@@ -212,7 +212,7 @@ impl TransmitQueue {
                 let size = match serialized_size(&item.broadcast) {
                     Ok(n) => n as i64,
                     Err(e) => {
-                        eprintln!("Serialization error: {:?}", e);
+                        error!("Serialization error: {:?}", e);
                         prune.push(item.clone());
                         continue;
                     }

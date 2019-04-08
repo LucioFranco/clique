@@ -1,5 +1,5 @@
-// #[macro_use]
-// extern crate tokio_trace;
+#[macro_use]
+extern crate tokio_trace;
 
 #[cfg(test)]
 #[macro_use]

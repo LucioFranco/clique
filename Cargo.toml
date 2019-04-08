@@ -17,7 +17,7 @@ uuid = { version = "0.7", features = ["serde", "v4"] }
 cuckoofilter = "0.3"
 indexmap = "1.0"
 rand = "0.6"
+bincode = "1.1"
 
 [dev-dependencies]
 tokio-test = { git = "https://github.com/LucioFranco/tokio", branch = "tokio-test" }
-quickcheck = "0.8"

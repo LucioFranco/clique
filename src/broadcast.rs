@@ -206,11 +206,12 @@ impl TransmitQueue {
             for item in self.set.range(start..end) {
                 let size = serialized_size(&item.broadcast)? as i64;
                 if size as i64 > free {
+                    // Ignore this broadcast as it won't fit
                     continue;
                 }
 
                 // Update sizes
-                used += serialized_size(&item.broadcast)? as i64;
+                used += size;
                 free -= size;
 
                 broadcasts.push(item.clone());

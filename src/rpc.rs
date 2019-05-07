@@ -1,0 +1,1 @@
+pub use clique_proto as proto;

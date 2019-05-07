@@ -10,6 +10,8 @@ mod node;
 mod peer;
 mod protocol;
 mod transport;
+mod messaging;
+mod rpc;
 
 pub use node::Node;
 pub use peer::Peer;

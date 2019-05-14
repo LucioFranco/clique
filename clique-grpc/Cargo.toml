@@ -1,0 +1,9 @@
+[package]
+name = "clique-grpc"
+version = "0.1.0"
+authors = ["Bhargav Voleti <bhargav.voleti93@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+clique = { path = "../"}
+clique-proto = { path = "../clique-proto"}

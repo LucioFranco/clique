@@ -10,7 +10,8 @@ publish = false
 
 [workspace]
 members = [
-  "clique-proto"
+  "clique-proto",
+  "clique-grpc"
 ]
 
 [lib]

@@ -1,22 +1,18 @@
+pub mod clique_proto {
+    include!(concat!(env!("OUT_DIR"), "/messaging.rs"));
+}
+
+pub use self::clique_proto::*;
+
 use clique::messaging::{Broadcast, RapidResponseFuture};
-use clique_proto;
 
-use clique_proto::{RapidRequest, Endpoint};
-struct Client;
+struct CliqueClient;
 
-impl Broadcast for Client {
+impl Broadcast for CliqueClient {
     fn broadcast(&self, req: RapidRequest) -> RapidResponseFuture {
         unimplemented!()
     }
     fn set_membership(&self, reciepients: Vec<Endpoint>) {
         unimplemented!()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
     }
 }

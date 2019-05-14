@@ -1,4 +1,3 @@
-use clique_proto::{RapidRequest, RapidResponse, Endpoint};
 use futures::Future;
 
 use crate::{membership::Membership};
@@ -19,3 +18,9 @@ pub trait Server {
     fn shutdown(&self);
     fn set_membership_service(&self, membership: Membership);
 }
+
+pub struct Endpoint;
+pub struct RapidResponse;
+pub struct NodeId;
+pub struct Metadata;
+pub struct RapidRequest;

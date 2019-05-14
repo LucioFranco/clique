@@ -1,8 +1,7 @@
 use std::time::Duration;
 use std::collections::{HashMap, VecDeque};
 
-use clique_proto::{Endpoint, RapidResponse, NodeId, Metadata};
-use crate::messaging::{Broadcast, Client};
+use crate::messaging::*;
 
 #[derive(Debug)]
 pub struct Config {

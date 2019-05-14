@@ -166,15 +166,18 @@ impl TransmitQueue {
         self.add(limited_broadcast);
     }
 
-    /// Returns a list of `LimitedBroadcast`s ordered by newest first. The limit parameter limits
-    /// the total number of `LimitedBroadcast`s returned. The size being counted is the
-    /// `serialized_size` of the `Broadcast` type.
-    pub fn get_broadcasts(&mut self, limit: u64) -> Result<Vec<LimitedBroadcast>> {
+    /// Returns a list of `Broadcast`s ordered by newest first. The number of values returned
+    /// is limited by the `size_limit` parameter which limits the toal size of the resultant Vec.
+    pub fn get_broadcasts(&mut self, size_limit: usize) -> Result<Vec<Broadcast>> {
         let int_max = std::u64::MAX;
         let mut used: i64 = 0;
 
         let mut reinsert = vec![];
         let mut broadcasts = vec![];
+
+        // The size of an empty vec is 8 bytes. Every item added to the vec only increases the size
+        // of the vec by the size of the item. Consider this in the calculation.
+        used += serialized_size(&broadcasts)? as i64;
 
         let joined = Broadcast::new(Message::Joined);
 
@@ -188,10 +191,10 @@ impl TransmitQueue {
         // number of transmits in the queue, and iterating over each transmit tier. Each iteration
         // of this loop, we see if there are any broadcasts which fit the remaining size in the
         // given transmit tier and add it to the `broadcasts` vec. These items are added to the
-        // prune list. If the item hasn't been transmitted `limit` (currently 5) times, it is
+        // prune list. If the item hasn't been transmitted `size_limit` (currently 5) times, it is
         // reinserted into the queue.
         for transmits in min..max + 1 {
-            let mut free: i64 = limit as i64 - used;
+            let mut free: i64 = size_limit as i64 - used;
 
             if free <= 0 {
                 break;
@@ -205,7 +208,16 @@ impl TransmitQueue {
             let mut prune = vec![];
 
             for item in self.set.range(start..end) {
-                let size = serialized_size(&item.broadcast)? as i64;
+                // Drop those broadcasts which cannot be serialized.
+                let size = match serialized_size(&item.broadcast) {
+                    Ok(n) => n as i64,
+                    Err(e) => {
+                        error!("Serialization error: {:?}", e);
+                        prune.push(item.clone());
+                        continue;
+                    }
+                };
+
                 if size as i64 > free {
                     // Ignore this broadcast as it won't fit
                     continue;
@@ -215,7 +227,7 @@ impl TransmitQueue {
                 used += size;
                 free -= size;
 
-                broadcasts.push(item.clone());
+                broadcasts.push(item.broadcast.clone());
                 prune.push(item.clone());
 
                 // TODO: make this parameter configurable
@@ -281,36 +293,56 @@ mod tests {
     #[test]
     fn get_to_limit() {
         let broadcasts = gen_broadcasts(5);
-        let num_broadcasts = 3;
-        let size = serialized_size(&Broadcast::new(Message::Joined)).unwrap();
-
         let mut queue = TransmitQueue::new();
 
         broadcasts.into_iter().for_each(|b| queue.enqueue(b));
 
-        let packets = queue.get_broadcasts(size * num_broadcasts).unwrap();
-        assert_eq!(packets.len(), num_broadcasts as usize);
+        let packets = queue.get_broadcasts(100).unwrap();
+        assert_eq!(packets.len(), 3);
     }
 
     #[test]
     fn empty_queue() {
         let broadcasts = gen_broadcasts(5);
-        let num_broadcasts = 3;
-        let size = serialized_size(&Broadcast::new(Message::Joined)).unwrap();
-
         let mut queue = TransmitQueue::new();
 
         broadcasts.into_iter().for_each(|b| queue.enqueue(b));
         let mut counter = 0;
 
         while queue.len() > 0 {
-            let _packets = queue.get_broadcasts(size * num_broadcasts).unwrap();
+            let _packets = queue.get_broadcasts(100).unwrap();
             counter += 1;
         }
 
         // This is based on the hard coded limit of 5 transmits per broadcast. We have 5 items in
         // the queue, `get_broadcast` call gets 3 items of 1 tier, followed by 2 items of 1 tier
-        // and 1 item of the next tier, and takes 10 calls to empty the queue.
+        // and 1 item of the next tier, and this goes on until all items have been transmitted
+        // 5 times and takes 10 calls to empty the queue.
         assert_eq!(counter, 10);
+    }
+
+    #[test]
+    fn correct_ordering() {
+        let broadcasts = gen_broadcasts(5);
+        let ids: Vec<Uuid> = broadcasts.iter().map(|b| b.uuid).collect();
+        let mut queue = TransmitQueue::new();
+
+        broadcasts.into_iter().for_each(|b| queue.enqueue(b));
+
+        let mut queue_ids = vec![];
+
+        while queue.len() > 0 {
+            let packets = queue.get_broadcasts(100).unwrap();
+            packets.iter().for_each(|p| queue_ids.push(p.uuid));
+        }
+
+        // 3 items per round, 10 rounds
+        assert_eq!(queue_ids.len(), 30);
+
+        ids.iter()
+            .rev()
+            .cycle()
+            .zip(queue_ids.iter())
+            .for_each(|(expected, result)| assert_eq!(expected, result));
     }
 }

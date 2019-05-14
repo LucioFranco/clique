@@ -1,5 +1,5 @@
-// #[macro_use]
-// extern crate tokio_trace;
+#[macro_use]
+extern crate tokio_trace;
 
 #[cfg(test)]
 #[macro_use]
@@ -10,6 +10,8 @@ mod node;
 mod peer;
 mod protocol;
 mod transport;
+pub mod messaging;
+mod membership;
 
 pub use node::Node;
 pub use peer::Peer;

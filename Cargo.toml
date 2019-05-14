@@ -8,6 +8,14 @@ authors = [
 edition = "2018"
 publish = false
 
+[workspace]
+members = [
+  "clique-grpc"
+]
+
+[lib]
+path = "src/lib.rs"
+
 [dependencies]
 futures = "0.1"
 tokio-timer = "0.2"

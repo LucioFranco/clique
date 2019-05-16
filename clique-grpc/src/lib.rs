@@ -1,7 +1,12 @@
 use futures::Future;
 use http::Uri;
-use hyper::client::connect::{Connect, Destination, HttpConnector};
-use tower_hyper::{client, util};
+use http_body::Body as HttpBody;
+use hyper::client::connect::{Destination, HttpConnector};
+use tokio_buf::BufStream;
+use tower_hyper::{
+    client::{self, Connection},
+    util,
+};
 use tower_request_modifier;
 use tower_util::MakeService;
 
@@ -14,12 +19,12 @@ pub use self::clique_proto::*;
 use clique::messaging::{Broadcast, RapidResponseFuture};
 
 struct CliqueClient {
-    conn: Connect,
+    conn: Connection<tower_hyper::body::Body>,
 }
 
 impl CliqueClient {
-    fn init(uri: &str) -> CliqueClient {
-        let dst = Destination::try_from_uri(uri.parse().unwrap().clone()).unwrap();
+    fn init(uri: Uri) -> CliqueClient {
+        let dst = Destination::try_from_uri(uri).unwrap();
         let connector = util::Connector::new(HttpConnector::new(4));
         let settings = client::Builder::new().http2_only(true).clone();
         let mut make_client = client::Connect::with_builder(connector, settings);

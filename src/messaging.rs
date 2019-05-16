@@ -11,6 +11,8 @@ pub trait Broadcast {
 pub trait Client {
     fn send_message(&self, remote: Endpoint, message: RapidRequest) -> RapidResponseFuture;
     fn send_message_best_effort(&self, remote: Endpoint, message: RapidRequest) -> RapidResponseFuture;
+    fn broadcast(&self, req: RapidRequest) -> RapidResponseFuture;
+    fn set_membership(&self, reciepients: Vec<Endpoint>);
 }
 
 pub trait Server {

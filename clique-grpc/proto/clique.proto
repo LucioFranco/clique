@@ -11,7 +11,6 @@ message Endpoint {
     int32 port = 2;
 }
 
-
 // All-in-one message type.
 message RapidRequest {
    oneof content {
@@ -35,7 +34,6 @@ message RapidResponse {
         ProbeResponse probeResponse = 4;
    }
 }
-
 
 // ******* Join protocol messages *******
 

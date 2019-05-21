@@ -1,7 +1,7 @@
 use futures::{
     stream::futures_unordered::FuturesUnordered,
     sync::{mpsc, oneshot},
-    Async, Future, Poll,
+    Async, Future, Poll, Stream,
 };
 use http::Uri;
 use hyper::client::connect::{Destination, HttpConnector};
@@ -47,6 +47,10 @@ where
 
         Enqueuer { chan: tx }
     }
+
+    fn poll_enqueue(&mut self) {
+        self.rx.for_each(|item| self.inner.push(item))
+    }
 }
 
 impl<F> Future for FuturesRunner<F>
@@ -57,6 +61,9 @@ where
     type Error = F::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        // Check if there are items to be run
+        self.poll_enqueue();
+
         match self.inner.poll() {
             Ok(Async::Ready(None)) => Ok(Async::NotReady), // There are no futures to run
             Ok(Async::Ready(Some(val))) => Ok(Async::Ready(val)),

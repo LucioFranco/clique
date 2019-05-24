@@ -24,69 +24,9 @@ pub mod clique_proto {
 use clique_proto::client::{self as ProtoClient, MembershipService};
 use clique_proto::RapidRequest;
 
-struct PoolReq {
+struct Message {
     uri: Uri,
-    req: RapidRequest,
-}
-
-struct FuturesRunner<Request, T: Service<Request>> {
-    inner: FuturesUnordered<Box<dyn Future<Item = T::Response, Error = ()>>>,
-    rx: mpsc::UnboundedReceiver<(Request, oneshot::Sender<T::Response>)>,
-}
-
-impl<Request, T> FuturesRunner<Request, T>
-where
-    T: Service<Request> + Clone,
-    Request: Address,
-{
-    pub fn new() -> mpsc::UnboundedSender<(Request, oneshot::Sender<T::Response>)> {
-        let (tx, rx) = mpsc::unbounded();
-        tokio::spawn(FuturesRunner {
-            inner: FuturesUnordered::new(),
-            rx,
-        });
-
-        tx
-    }
-
-    fn poll_enqueue(&mut self) {
-        self.rx
-            .for_each(|uri| {
-                let dst = Destination::try_from_uri(uri.clone()).unwrap();
-                let connector = util::Connector::new(HttpConnector::new(4));
-                let settings = client::Builder::new().http2_only(true).clone();
-                let mut make_client = client::Connect::with_builder(connector, settings);
-
-                let client = make_client
-                    .make_service(dst) // we need to enqueue
-                    .map_err(|e| panic!("Unable to connect to destination"));
-
-                self.inner.push(Box::new(client));
-                Ok(())
-            })
-            .poll();
-    }
-}
-
-impl<Request, T> Future for FuturesRunner<Request, T>
-where
-    T: Service<Request> + Clone,
-    Request: Address,
-{
-    type Item = T::Response;
-    type Error = ();
-
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        // Check if there are items to be run
-        self.poll_enqueue();
-
-        match self.inner.poll() {
-            Ok(Async::Ready(None)) => Ok(Async::NotReady), // There are no futures to run
-            Ok(Async::Ready(Some(val))) => Ok(Async::Ready(val)),
-            Ok(Async::NotReady) => Ok(Async::NotReady),
-            Err(e) => Err(e),
-        }
-    }
+    payload: RapidRequest,
 }
 
 pub struct UniquePool<Request, T>
@@ -96,76 +36,67 @@ where
     pool: HashMap<Uri, T::Response>,
     buffering: usize,
     max_buffering: usize,
-    enqueuer: mpsc::UnboundedSender<(Request, oneshot::Sender<T::Response>)>,
 }
 
-impl<Request, T> UniquePool<Request, T>
+impl<Message, T> UniquePool<Message, T>
 where
-    T: Service<Request> + Clone,
-    Request: Address,
+    T: Service<Message> + Clone,
 {
-    pub fn new(max: usize) -> UniquePool<Request, T> {
+    pub fn new(max: usize) -> UniquePool<Message, T> {
         UniquePool {
             pool: HashMap::new(),
             buffering: 0,
             max_buffering: max,
-            enqueuer: FuturesRunner::new(),
         }
     }
 }
 
-trait Address {
-    type Address: Clone;
-    type Payload: Clone;
-
-    fn get_uri(&self) -> Self::Address;
-    fn get_payload(&self) -> Self::Payload;
-}
-
-impl<Request, T> Service<Request> for UniquePool<Request, T>
+impl<Message, T> Service<Message> for UniquePool<Message, T>
 where
-    T: Service<Request> + Clone,
-    Request: Address,
+    T: Service<Message> + Clone,
 {
     type Response = T::Response;
-    type Error = (); // Need better error handling
+    type Error = Box<std::error::Error + Send + Sync + 'static>; // Need better error handling
     type Future = Box<Future<Item = Self::Response, Error = Self::Error>>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         if self.buffering >= self.max_buffering {
-            Err(())
+            Err(().into())
         } else {
             Ok(Async::Ready(()))
         }
     }
 
-    fn call(&mut self, req: Request) -> Self::Future {
-        if let Some(conn) = self.pool.get(req.get_uri()) {
+    fn call(&mut self, request: Message) -> Self::Future {
+        if let Some(conn) = self.pool.get(&request.uri) {
             // We have already established a connection to this destination
             ProtoClient::MembershipService::new(conn)
-                .and_then(|client| client.send_request(req.req))
+                .and_then(|client| Box::new(client.send_request(request.payload)))
         } else {
             // The connection doesn't exist, so we need to establish it, and then wait for it to resolve
             // and once it does, we need to make the request.
             // All this has to be done in a non-blocking way.
             self.buffering += 1;
 
-            self.enqueuer
-                .unbounded_send(request.get_uri())
-                .map_err(|e| panic!("Unable to connect to destination"))
-                .and_then(|conn| {
-                    use ProtoClient::MembershipService;
+            let dst = Destination::try_from_uri(request.uri.clone()).unwrap();
+            let connector = util::Connector::new(HttpConnector::new(4));
+            let settings = client::Builder::new().http2_only(true).clone();
+            let mut make_client = client::Connect::with_builder(connector, settings);
 
+            make_client
+                .make_service(dst)
+                .map_err(Into::into)
+                .and_then(move |conn| {
                     let conn = tower_request_modifier::Builder::new()
-                        .set_origin(req.get_uri())
-                        .build(conn)
+                        .set_origin(request.uri)
+                        .build()
                         .unwrap();
 
-                    Ok(MembershipService::new(conn)) // This should be run on the background process
+                    self.pool.insert(conn);
+                    Ok(ProtoClient::MembershipService::new(conn))
                 })
-                .and_then(|mut client| client.send_request(req.get_payload()))
-                .map_err(|e| println!("ERROR making request"))
-                .map(|val| val.ok())
+                .and_then(|mut client| Box::new(client.send_request(request.payload)))
+                .map_err(Into::into)
         }
     }
 }

@@ -6,6 +6,7 @@ use futures::{
 use http::Uri;
 use hyper::client::connect::{Destination, HttpConnector};
 use tokio;
+use tower_grpc::Request;
 use tower_hyper::{
     body::Body,
     client::{self, Connection},
@@ -16,6 +17,7 @@ use tower_service::Service;
 use tower_util::MakeService;
 
 use std::collections::HashMap;
+use std::hash::Hash;
 
 pub mod clique_proto {
     include!(concat!(env!("OUT_DIR"), "/messaging.rs"));
@@ -29,22 +31,22 @@ struct Message {
     req: RapidRequest,
 }
 
-pub struct UniquePool<Request, T>
+pub struct UniquePool<R, T, M>
 where
-    T: Service<Request> + Clone,
+    T: Service<R> + Clone,
+    R: PoolRequest<M>,
 {
-    pool: HashMap<Uri, T::Response>,
+    pool: HashMap<R::Address, T::Response>,
     buffering: usize,
     max_buffering: usize,
-    enqueuer: mpsc::UnboundedSender<(Request, oneshot::Sender<T::Response>)>,
 }
 
-impl<Request, T> UniquePool<Request, T>
+impl<R, T, M> UniquePool<R, T, M>
 where
-    T: Service<Request> + Clone,
-    Request: PoolRequest,
+    T: Service<R> + Clone,
+    R: PoolRequest<M>,
 {
-    pub fn new(max: usize) -> UniquePool<Request, T> {
+    pub fn new(max: usize) -> UniquePool<R, T, M> {
         UniquePool {
             pool: HashMap::new(),
             buffering: 0,
@@ -53,15 +55,21 @@ where
     }
 }
 
-trait PoolRequest {
-    type Address: Into<Uri> + Clone;
-    type Payload: Clone;
+trait PoolRequest<T> {
+    type Address: Into<Uri> + Clone + Eq + Hash;
+    type Payload: Into<tower_grpc::Request<T>> + Clone;
 
     fn get_uri(&self) -> Self::Address;
     fn get_payload(&self) -> Self::Payload;
 }
 
-impl PoolRequest for Message {
+impl From<RapidRequest> for Request<RapidRequest> {
+    fn from(req: RapidRequest) -> Request<RapidRequest> {
+        Request::new(req)
+    }
+}
+
+impl<T> PoolRequest<T> for Message {
     type Address = Uri;
     type Payload = RapidRequest;
 
@@ -70,14 +78,14 @@ impl PoolRequest for Message {
     }
 
     fn get_payload(&self) -> Self::Payload {
-        self.req
+        self.req.into()
     }
 }
 
-impl<Request, T> Service<Request> for UniquePool<Request, T>
+impl<R, T, M> Service<R> for UniquePool<R, T, M>
 where
-    T: Service<Request> + Clone,
-    Request: PoolRequest,
+    T: Service<R> + Clone,
+    R: PoolRequest<M>,
 {
     type Response = T::Response;
     type Error = Box<std::error::Error + Send + Sync + 'static>; // Need better error handling
@@ -91,11 +99,11 @@ where
         }
     }
 
-    fn call(&mut self, req: Request) -> Self::Future {
+    fn call(&mut self, req: R) -> Self::Future {
         if let Some(conn) = self.pool.get(&req.get_uri().into()) {
             // We have already established a connection to this destination
             ProtoClient::MembershipService::new(conn)
-                .and_then(|client| client.send_request(req.get_payload()))
+                .and_then(|client| client.send_request(req.get_payload().into()))
         } else {
             // The connection doesn't exist, so we need to establish it, and then wait for it to resolve
             // and once it does, we need to make the request.
@@ -113,13 +121,13 @@ where
                 .and_then(move |conn| {
                     let conn = tower_request_modifier::Builder::new()
                         .set_origin(req.get_uri().into())
-                        .build()
+                        .build(conn)
                         .unwrap();
 
-                    self.pool.insert(conn);
+                    self.pool.insert(req.get_uri(), conn);
                     Ok(ProtoClient::MembershipService::new(conn))
                 })
-                .and_then(|mut client| client.send_request(req.get_payload()))
+                .and_then(|mut client| client.send_request(req.get_payload().into()))
                 .map_err(Into::into);
         }
     }

@@ -13,6 +13,7 @@ use tower_util::MakeService;
 
 use std::collections::HashMap;
 use std::hash::Hash;
+use std::sync::{Arc, Mutex};
 
 pub mod clique_proto {
     include!(concat!(env!("OUT_DIR"), "/messaging.rs"));
@@ -23,7 +24,7 @@ where
     S: MakeService<T, R> + Clone,
     T: Hash + Eq,
 {
-    pool: HashMap<T, S::Service>,
+    pool: Arc<Mutex<HashMap<T, S::Service>>>,
     maker: S,
 }
 
@@ -34,7 +35,7 @@ where
 {
     pub fn new(maker: S) -> UniquePool<S, T, R> {
         UniquePool {
-            pool: HashMap::new(),
+            pool: Arc::new(Mutex::new(HashMap::new())),
             maker,
         }
     }
@@ -48,12 +49,12 @@ type Error = Box<std::error::Error + Send + Sync + 'static>;
 
 impl<M, T, R> Service<R> for UniquePool<M, T, R>
 where
-    M: MakeService<T, R> + Clone + Send + 'static,
+    M: MakeService<T, R> + Clone + Send + Sync,
     T: Hash + Eq + Send + 'static,
     R: Key<T> + Send + 'static,
     M::Service: Clone + Send + 'static,
-    M::MakeError: Into<Error>,
-    M::Error: Into<Error>,
+    M::MakeError: Into<Error> + 'static,
+    M::Error: Into<Error> + 'static,
     M::Future: Send + 'static,
     <M::Service as Service<R>>::Future: Send + 'static,
 {
@@ -66,16 +67,17 @@ where
     }
 
     fn call(&mut self, req: R) -> Self::Future {
-        if let Some(svc) = self.pool.get(&req.get_key()) {
+        if let Some(svc) = self.pool.lock().unwrap().get_mut(&req.get_key()) {
             Box::new(svc.call(req).map_err(Into::into))
         } else {
+            let pool = self.pool.clone();
             let fut = self
                 .maker
                 .clone()
                 .make_service(req.get_key())
                 .map_err(Into::into)
-                .and_then(|svc| {
-                    self.pool.insert(req.get_key(), svc.clone());
+                .and_then(move |mut svc| {
+                    pool.lock().unwrap().insert(req.get_key(), svc.clone());
                     svc.call(req).map_err(Into::into)
                 });
 

@@ -48,16 +48,18 @@ type Error = Box<std::error::Error + Send + Sync + 'static>;
 
 impl<M, T, R> Service<R> for UniquePool<M, T, R>
 where
-    M: MakeService<T, R> + Clone,
-    T: Hash + Eq,
-    R: Key<T>,
-    M::Service: Clone,
+    M: MakeService<T, R> + Clone + Send + 'static,
+    T: Hash + Eq + Send + 'static,
+    R: Key<T> + Send + 'static,
+    M::Service: Clone + Send + 'static,
     M::MakeError: Into<Error>,
     M::Error: Into<Error>,
+    M::Future: Send + 'static,
+    <M::Service as Service<R>>::Future: Send + 'static,
 {
     type Response = M::Response;
     type Error = Error; // Need better error handling
-    type Future = Box<dyn Future<Item = Self::Response, Error = Self::Error>>;
+    type Future = Box<dyn Future<Item = Self::Response, Error = Self::Error> + Send + 'static>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         Ok(Async::Ready(()))
@@ -74,9 +76,9 @@ where
                 .map_err(Into::into)
                 .and_then(|svc| {
                     self.pool.insert(req.get_key(), svc.clone());
-                    svc.call(req)
-                })
-                .map_err(Into::into);
+                    svc.call(req).map_err(Into::into)
+                });
+
             Box::new(fut)
         }
     }

@@ -40,7 +40,7 @@ where
     }
 }
 
-trait Key<T> {
+pub trait Key<T> {
     fn get_key(&self) -> T;
 }
 
@@ -63,17 +63,17 @@ where
         if let Some(svc) = self.pool.get(&req.get_key()) {
             Box::new(svc.call(req).map_err(|_| ()))
         } else {
-            Box::new(
-                self.maker
-                    .clone()
-                    .make_service(req.get_key())
-                    .map_err(|_| ())
-                    .and_then(|svc| {
-                        self.pool.insert(req.get_key(), svc.clone());
-                        svc.call(req)
-                    })
-                    .map_err(|_| ()),
-            )
+            let fut = self
+                .maker
+                .clone()
+                .make_service(req.get_key())
+                .map_err(|_| ())
+                .and_then(|svc| {
+                    self.pool.insert(req.get_key(), svc.clone());
+                    svc.call(req)
+                })
+                .map_err(|_| ());
+            Box::new(fut)
         }
     }
 }

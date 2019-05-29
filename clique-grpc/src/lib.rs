@@ -1,12 +1,4 @@
-use futures::{Async, Future, Poll, Stream};
-use http::Uri;
-use hyper::client::connect::{Destination, HttpConnector};
-use tower_grpc::Request;
-use tower_hyper::{
-    client::{self, Connection},
-    util,
-};
-use tower_request_modifier;
+use futures::{Async, Future, Poll};
 use tower_service::Service;
 use tower_util;
 use tower_util::MakeService;
@@ -59,7 +51,7 @@ where
     <M::Service as Service<R>>::Future: Send + 'static,
 {
     type Response = M::Response;
-    type Error = Error; // Need better error handling
+    type Error = Error;
     type Future = Box<dyn Future<Item = Self::Response, Error = Self::Error> + Send + 'static>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
@@ -83,5 +75,60 @@ where
 
             Box::new(fut)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use futures::Future;
+    use rand;
+    use rand::prelude::*;
+    use tower_service::Service;
+    use tower_test::{assert_request_eq, mock};
+
+    use super::{Key, UniquePool};
+
+    #[derive(Eq, PartialEq, Debug, Hash)]
+    struct Req(u32);
+
+    // Helper to run some code within context of a task
+    fn with_task<F: FnOnce() -> U, U>(f: F) -> U {
+        use futures::future::lazy;
+        lazy(|| Ok::<_, ()>(f())).wait().unwrap()
+    }
+
+    fn gen_request() -> Req {
+        let mut rng = rand::thread_rng();
+        Req(rng.gen())
+    }
+
+    impl Key<u32> for Req {
+        fn get_key(&self) -> u32 {
+            self.0
+        }
+    }
+
+    #[test]
+    fn store_service() {
+        let (mut mock, mut handle) = mock::pair::<Req, String>();
+
+        let pool = UniquePool::new(mock);
+
+        let req = gen_request();
+
+        assert!(mock.poll_ready().unwrap().is_ready());
+        let mut response = mock.call(req);
+
+        let send_response = assert_request_eq!(handle, req);
+
+        assert_eq!(pool.pool.lock().unwrap().len(), 1);
+
+        with_task(|| {
+            assert!(response.poll().unwrap().is_not_ready());
+        });
+
+        send_response.send_response("test".into());
+
+        assert_eq!(response.wait().unwrap().as_str(), "test");
     }
 }

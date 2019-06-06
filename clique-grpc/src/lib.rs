@@ -89,7 +89,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use futures::Future;
+    use futures::future::ok;
+    use futures::{Async, Future, Poll};
     use rand;
     use rand::prelude::*;
     use tower_service::Service;
@@ -125,9 +126,25 @@ mod tests {
         }
     }
 
+    struct ResponseVal(String);
+
+    impl Service<String> for ResponseVal {
+        type Response = String;
+        type Error = ();
+        type Future = Box<dyn Future<Item = Self::Response, Error = Self::Error>>;
+
+        fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+            Ok(Async::Ready(()))
+        }
+
+        fn call(&mut self, _: String) -> Self::Future {
+            Box::new(ok::<String, ()>(self.0))
+        }
+    }
+
     #[test]
     fn store_service() {
-        let (mut mock, mut handle) = mock::pair::<Req, String>();
+        let (mut mock, mut handle) = mock::pair::<Req, ResponseVal>();
 
         let pool = UniquePool::new(mock);
 
@@ -144,7 +161,9 @@ mod tests {
             assert!(response.poll().unwrap().is_not_ready());
         });
 
-        send_response.send_response("test".into());
+        let response_type = ResponseVal("test".to_string());
+
+        send_response.send_response(response_type);
 
         assert_eq!(response.wait().unwrap().as_str(), "test");
     }

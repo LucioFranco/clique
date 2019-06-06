@@ -87,53 +87,6 @@ where
     }
 }
 
-#[derive(Hash, Eq)]
-struct Target {
-    uri: Uri,
-}
-
-impl Key<Uri> for Target {
-    fn get_key(&self) -> Uri {
-        self.uri
-    }
-}
-
-impl PartialEq for Target {
-    fn eq(&self, other: &Target) -> bool {
-        self.uri == other.uri
-    }
-}
-
-pub struct GrpcClient<T> {
-    conn: ProtoClient::MembershipService<T>,
-}
-
-impl<T> GrpcClient<T> {
-    pub fn new(conn: T) -> GrpcClient<T> {
-        GrpcClient {
-            conn: ProtoClient::MembershipService::new(conn),
-        }
-    }
-}
-
-impl<T, R> Service<R> for GrpcClient<T>
-where
-    T: GrpcService<R>,
-    Once<RapidRequest>: tower_grpc::client::Encodable<R>,
-{
-    type Response = Response<T::ResponseBody>;
-    type Error = T::Error;
-    type Future = T::Future;
-
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.conn.poll_ready().map_err(Into::into)
-    }
-
-    fn call(&mut self, request: R) -> Self::Future {
-        self.conn.send_request(gRequest::new(request))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use futures::Future;

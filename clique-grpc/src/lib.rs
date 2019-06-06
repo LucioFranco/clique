@@ -1,4 +1,10 @@
 use futures::{Async, Future, Poll};
+use http::{Response, Uri};
+use http_body::Body as HttpBody;
+use tower_grpc::client::unary::Once;
+use tower_grpc::generic::client::GrpcService;
+use tower_grpc::Request as gRequest;
+use tower_hyper::client::Connection;
 use tower_service::Service;
 use tower_util;
 use tower_util::MakeService;
@@ -10,6 +16,9 @@ use std::sync::{Arc, Mutex};
 pub mod clique_proto {
     include!(concat!(env!("OUT_DIR"), "/messaging.rs"));
 }
+
+use clique_proto::client as ProtoClient;
+use clique_proto::RapidRequest;
 
 pub struct UniquePool<S, T, R>
 where
@@ -78,6 +87,53 @@ where
     }
 }
 
+#[derive(Hash, Eq)]
+struct Target {
+    uri: Uri,
+}
+
+impl Key<Uri> for Target {
+    fn get_key(&self) -> Uri {
+        self.uri
+    }
+}
+
+impl PartialEq for Target {
+    fn eq(&self, other: &Target) -> bool {
+        self.uri == other.uri
+    }
+}
+
+pub struct GrpcClient<T> {
+    conn: ProtoClient::MembershipService<T>,
+}
+
+impl<T> GrpcClient<T> {
+    pub fn new(conn: T) -> GrpcClient<T> {
+        GrpcClient {
+            conn: ProtoClient::MembershipService::new(conn),
+        }
+    }
+}
+
+impl<T, R> Service<R> for GrpcClient<T>
+where
+    T: GrpcService<R>,
+    Once<RapidRequest>: tower_grpc::client::Encodable<R>,
+{
+    type Response = Response<T::ResponseBody>;
+    type Error = T::Error;
+    type Future = T::Future;
+
+    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+        self.conn.poll_ready().map_err(Into::into)
+    }
+
+    fn call(&mut self, request: R) -> Self::Future {
+        self.conn.send_request(gRequest::new(request))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use futures::Future;
@@ -88,8 +144,16 @@ mod tests {
 
     use super::{Key, UniquePool};
 
+    use std::cmp::PartialEq;
+
     #[derive(Eq, PartialEq, Debug, Hash)]
     struct Req(u32);
+
+    impl PartialEq<Req> for u32 {
+        fn eq(&self, other: &Req) -> bool {
+            *self == other.0
+        }
+    }
 
     // Helper to run some code within context of a task
     fn with_task<F: FnOnce() -> U, U>(f: F) -> U {
@@ -116,8 +180,8 @@ mod tests {
 
         let req = gen_request();
 
-        assert!(mock.poll_ready().unwrap().is_ready());
-        let mut response = mock.call(req);
+        assert!(pool.poll_ready().unwrap().is_ready());
+        let mut response = pool.call(req);
 
         let send_response = assert_request_eq!(handle, req);
 

@@ -1,12 +1,6 @@
-use futures::{Async, Future, Poll};
-use http::{Response, Uri};
-use http_body::Body as HttpBody;
-use tower_grpc::client::unary::Once;
-use tower_grpc::generic::client::GrpcService;
-use tower_grpc::Request as gRequest;
-use tower_hyper::client::Connection;
+use futures::{future::poll_fn, Async, Future, Poll};
+use tower::util::ServiceExt;
 use tower_service::Service;
-use tower_util;
 use tower_util::MakeService;
 
 use std::collections::HashMap;
@@ -76,11 +70,14 @@ where
             Box::new(svc.call(req).map_err(Into::into))
         } else {
             let pool = self.pool.clone();
-            let fut = self
-                .maker
-                .clone()
-                .make_service(req.get_key())
-                .map_err(Into::into)
+            let maker = poll_fn(|| self.maker.poll_ready());
+            let fut = maker
+                .and_then(|mut maker| {
+                    self.maker
+                        .clone()
+                        .make_service(req.get_key())
+                        .map_err(Into::into)
+                })
                 .and_then(move |mut svc| {
                     pool.lock().unwrap().insert(req.get_key(), svc.clone());
                     svc.call(req).map_err(Into::into)

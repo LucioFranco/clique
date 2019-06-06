@@ -20,21 +20,25 @@ pub mod clique_proto {
 use clique_proto::client as ProtoClient;
 use clique_proto::RapidRequest;
 
-pub struct UniquePool<S, T, R>
+pub struct UniquePool<M, T, R>
 where
-    S: MakeService<T, R> + Clone,
+    M: MakeService<T, R> + Clone,
     T: Hash + Eq,
 {
-    pool: Arc<Mutex<HashMap<T, S::Service>>>,
-    maker: S,
+    pool: Arc<Mutex<HashMap<T, M::Service>>>,
+    maker: M,
 }
 
-impl<S, T, R> UniquePool<S, T, R>
+impl<M, T, R> UniquePool<M, T, R>
 where
-    S: MakeService<T, R> + Clone,
+    M: MakeService<T, R> + Clone,
     T: Hash + Eq,
+    R: Key<T>,
+    M::Service: Clone,
+    M::MakeError: Into<Error>,
+    M::Error: Into<Error>,
 {
-    pub fn new(maker: S) -> UniquePool<S, T, R> {
+    pub fn new(maker: M) -> UniquePool<M, T, R> {
         UniquePool {
             pool: Arc::new(Mutex::new(HashMap::new())),
             maker,
@@ -100,7 +104,7 @@ mod tests {
 
     use std::cmp::PartialEq;
 
-    #[derive(Eq, PartialEq, Debug, Hash)]
+    #[derive(Eq, PartialEq, Debug, Hash, Clone)]
     struct Req(u32);
 
     impl PartialEq<Req> for u32 {
@@ -126,19 +130,26 @@ mod tests {
         }
     }
 
+    impl Key<Req> for Req {
+        fn get_key(&self) -> Req {
+            self.clone()
+        }
+    }
+
+    #[derive(Clone)]
     struct ResponseVal(String);
 
-    impl Service<String> for ResponseVal {
+    impl Service<Req> for ResponseVal {
         type Response = String;
-        type Error = ();
-        type Future = Box<dyn Future<Item = Self::Response, Error = Self::Error>>;
+        type Error = Box<std::error::Error + Send + Sync + 'static>;
+        type Future = Box<dyn Future<Item = Self::Response, Error = Self::Error> + Send + 'static>;
 
         fn poll_ready(&mut self) -> Poll<(), Self::Error> {
             Ok(Async::Ready(()))
         }
 
-        fn call(&mut self, _: String) -> Self::Future {
-            Box::new(ok::<String, ()>(self.0))
+        fn call(&mut self, _: Req) -> Self::Future {
+            Box::new(ok::<String, _>(self.0.clone()))
         }
     }
 
@@ -146,12 +157,13 @@ mod tests {
     fn store_service() {
         let (mut mock, mut handle) = mock::pair::<Req, ResponseVal>();
 
-        let pool = UniquePool::new(mock);
+        assert!(mock.poll_ready().unwrap().is_ready());
+        let mut pool = UniquePool::new(mock);
 
         let req = gen_request();
 
         assert!(pool.poll_ready().unwrap().is_ready());
-        let mut response = pool.call(req);
+        let mut response = pool.call(req.clone());
 
         let send_response = assert_request_eq!(handle, req);
 

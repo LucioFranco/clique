@@ -1,17 +1,6 @@
-#[macro_use]
-extern crate tokio_trace;
+#![feature(async_await)]
+#![deny(missing_docs, missing_debug_implementations, rust_2018_idioms)]
+#![cfg_attr(test, deny(warnings))]
+#![doc(test(no_crate_inject, attr(deny(rust_2018_idioms))))]
 
-#[cfg(test)]
-#[macro_use]
-extern crate tokio_test;
-
-mod broadcast;
-mod node;
-mod peer;
-mod protocol;
-mod transport;
-pub mod messaging;
-mod membership;
-
-pub use node::Node;
-pub use peer::Peer;
+//! Clique membership library.

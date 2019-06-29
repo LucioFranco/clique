@@ -8,24 +8,9 @@ authors = [
 edition = "2018"
 publish = false
 
-[workspace]
-members = [
-  "clique-grpc"
-]
-
-[lib]
-path = "src/lib.rs"
-
 [dependencies]
-futures = "0.1"
-tokio-timer = "0.2"
-serde = { version = "1.0", features = ["derive"] }
-tokio-trace = { git = "https://github.com/tokio-rs/tokio" }
-uuid = { version = "0.7", features = ["serde", "v4"] }
-cuckoofilter = "0.3"
-indexmap = "1.0"
-rand = "0.6"
-bincode = "1.1"
+futures-preview = "0.3.0-alpha.16"
 
 [dev-dependencies]
-tokio-test = { git = "https://github.com/LucioFranco/tokio", branch = "tokio-test" }
+tokio = { git = "https://github.com/LucioFranco/tokio" }
+tokio-test = { git = "https://github.com/tokio-rs/tokio" }

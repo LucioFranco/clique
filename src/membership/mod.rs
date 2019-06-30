@@ -1,16 +1,15 @@
 mod view;
 
-use crate::transport::Client;
+use crate::transport::Request;
 use view::View;
 
 #[derive(Debug, Clone)]
-pub struct Membership<C> {
-    client: C,
+pub struct Membership {
     view: View,
 }
 
-impl<C: Client + Clone> Membership<C> {
-    pub fn new(client: C) -> Self {
+impl Membership {
+    pub fn new() -> Self {
         unimplemented!()
     }
 
@@ -18,5 +17,7 @@ impl<C: Client + Clone> Membership<C> {
         self.view.clone()
     }
 
-    pub async fn handle_message(req: Request) -> 
+    pub async fn handle_message(req: Request) {
+        unimplemented!()
+    }
 }

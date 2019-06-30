@@ -1,4 +1,3 @@
-use crate::membership::Membership;
 use futures::Stream;
 use std::future::Future;
 

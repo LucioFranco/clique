@@ -13,6 +13,7 @@ pub struct Error {
 pub(crate) enum ErrorKind {
     Start,
     Join,
+    BrokenPipe,
 }
 
 impl Error {
@@ -20,8 +21,24 @@ impl Error {
         Self { kind, source }
     }
 
-    pub(crate) fn new_join(source: Option<Source>) -> Error {
+    pub(crate) fn new_broken_pipe(source: Option<Source>) -> Self {
+        Self::new(ErrorKind::BrokenPipe, source)
+    }
+
+    pub(crate) fn new_join(source: Option<Source>) -> Self {
         Self::new(ErrorKind::Join, source)
+    }
+}
+
+impl From<ErrorKind> for Error {
+    fn from(t: ErrorKind) -> Self {
+        Error::new(t, None)
+    }
+}
+
+impl From<(ErrorKind, Source)> for Error {
+    fn from(t: (ErrorKind, Source)) -> Self {
+        Error::new(t.0, Some(t.1))
     }
 }
 

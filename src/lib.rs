@@ -11,4 +11,5 @@ pub mod transport;
 
 mod membership;
 
+pub use self::cluster::Cluster;
 pub use self::error::{Error, Result};

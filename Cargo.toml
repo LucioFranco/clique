@@ -13,7 +13,7 @@ futures = { version = "=0.3.0-alpha.16", package = "futures-preview", features =
 uuid = { version = "0.7", features = ["serde", "v4"] }
 serde = "1.0"
 tokio-sync = { git = "https://github.com/tokio-rs/tokio", features = ["async-traits"] }
-tokio-timer = { git = "https://github.com/tokio-rs/tokio", features = ["interval"] }
+tokio-timer = { git = "https://github.com/tokio-rs/tokio" }
 
 [dev-dependencies]
 tokio = { git = "https://github.com/LucioFranco/tokio" }

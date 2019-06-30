@@ -17,7 +17,11 @@ impl Membership {
         self.view.clone()
     }
 
-    pub async fn handle_message(req: Request) {
+    pub async fn handle_message(&mut self, req: Request) {
+        unimplemented!()
+    }
+
+    pub async fn tick(&mut self) {
         unimplemented!()
     }
 }

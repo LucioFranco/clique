@@ -3,12 +3,14 @@ use crate::{
     membership::Membership,
     transport::{Client, Server},
 };
-use futures::stream::{Stream, StreamExt};
+use futures::{FutureExt, Stream, StreamExt};
 use std::{
     pin::Pin,
     task::{Context, Poll},
+    time::{Duration, Instant},
 };
 use tokio_sync::watch;
+use tokio_timer::Interval;
 
 #[derive(Debug, Default, Clone)]
 pub struct Event;
@@ -54,7 +56,7 @@ where
 
     pub async fn start(self) -> Result<()> {
         let Cluster {
-            membership,
+            mut membership,
             server,
             client,
             listen_target,
@@ -63,16 +65,20 @@ where
         } = self;
 
         let mut server = server.start(listen_target).await.unwrap().fuse();
+        let mut edge_detector_ticker = Interval::new(Instant::now(), Duration::from_secs(1)).fuse();
 
         loop {
             futures::select! {
                 request = server.next() => {
-                    if let Some(request) = request {
-                        unimplemented!()
+                    if let Some(Ok(request)) = request {
+                        membership.handle_message(request).await;
                     } else {
                         return Err(Error::new_join(None))
                     }
                 },
+                _ = edge_detector_ticker.next() => {
+                    membership.tick().await;
+                }
             };
         }
     }

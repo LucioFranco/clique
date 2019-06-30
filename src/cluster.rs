@@ -1,5 +1,5 @@
 use crate::{
-    error::Result,
+    error::{Error, Result},
     membership::Membership,
     transport::{Client, Server},
 };
@@ -64,17 +64,17 @@ where
 
         let mut server = server.start(listen_target).await.unwrap().fuse();
 
-        futures::select! {
-            request = server.next() => {
-                if let Some(request) = request {
-                    unimplemented!()
-                } else {
-                    panic!("Server shutdown for unknown reason")
-                }
-            },
-        };
-
-        Ok(())
+        loop {
+            futures::select! {
+                request = server.next() => {
+                    if let Some(request) = request {
+                        unimplemented!()
+                    } else {
+                        return Err(Error::new_join(None))
+                    }
+                },
+            };
+        }
     }
 }
 

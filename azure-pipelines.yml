@@ -7,8 +7,8 @@ jobs:
   parameters:
     name: rustfmt
 
-- job: test_stable
-  displayName: Test Stable
+- job: test
+  displayName: Test
   strategy:
     matrix:
       Linux:
@@ -22,6 +22,6 @@ jobs:
   steps:
     - template: ci/azure-install-rust.yml
       parameters:
-        rust_version: stable
+        rust_version: nightly-2019-06-12
     - script: cargo test --all --all-features
       displayName: cargo test --all --all-features

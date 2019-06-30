@@ -1,7 +1,11 @@
+mod proto;
+
 use crate::Error;
 use futures::Stream;
 use std::future::Future;
 use tokio_sync::oneshot;
+
+pub use self::proto::{RequestKind, ResponseKind};
 
 pub trait Client {
     type Error: std::error::Error;
@@ -19,10 +23,13 @@ pub trait Server<T, C> {
 }
 
 pub struct Request {
+    kind: RequestKind,
     res_tx: oneshot::Sender<crate::Result<Response>>,
 }
 
-pub struct Response;
+pub struct Response {
+    kind: ResponseKind,
+}
 
 impl Request {
     pub fn respond(self, res: Response) -> crate::Result<()> {

@@ -3,7 +3,7 @@ use crate::{
     membership::Membership,
     transport::{Client, Server},
 };
-use futures::{FutureExt, Stream, StreamExt};
+use futures::{Stream, StreamExt};
 use std::{
     pin::Pin,
     task::{Context, Poll},
@@ -58,9 +58,7 @@ where
         let Cluster {
             mut membership,
             server,
-            client,
             listen_target,
-            event_tx,
             ..
         } = self;
 

@@ -10,20 +10,24 @@ pub type RingNumber = i32;
 pub type Endpoint = String;
 
 /// Represents the NodeId internall it is just a Uuid v4
+#[derive(Debug)]
 pub struct NodeId(Uuid);
 
+#[derive(Debug)]
 pub enum RequestKind {
     PreJoin(PreJoinMessage),
     Join(JoinMessage),
     Probe,
 }
 
+#[derive(Debug)]
 pub enum ResponseKind {
     Join(JoinResponse),
     Response,
     Probe,
 }
 
+#[derive(Debug)]
 pub struct PreJoinMessage {
     pub sender: Endpoint,
     pub node_id: NodeId,
@@ -31,6 +35,7 @@ pub struct PreJoinMessage {
     pub config_id: ConfigId,
 }
 
+#[derive(Debug)]
 pub struct JoinMessage {
     pub sender: Endpoint,
     pub node_id: NodeId,
@@ -38,6 +43,7 @@ pub struct JoinMessage {
     pub config_id: ConfigId,
 }
 
+#[derive(Debug)]
 pub struct JoinResponse {
     pub sender: Endpoint,
     pub status: JoinStatus,
@@ -47,6 +53,7 @@ pub struct JoinResponse {
     pub cluster_metadata: HashMap<String, Metadata>,
 }
 
+#[derive(Debug)]
 pub enum JoinStatus {
     HostnameAlreadyInRing,
     NodeIdAlreadyInRing,
@@ -55,6 +62,7 @@ pub enum JoinStatus {
     MembershipRejected,
 }
 
+#[derive(Debug)]
 pub struct Metadata {
     pub metadata: HashMap<String, Bytes>,
 }

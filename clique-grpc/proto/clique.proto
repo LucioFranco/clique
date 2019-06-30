@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package clique;
+
+service MembershipService {
+  rpc sendRequest (Request) returns (Response) {}
+}
+
+message Request
+{
+}
+
+message Response
+{
+}

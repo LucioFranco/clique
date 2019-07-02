@@ -10,6 +10,7 @@ mod error;
 pub mod transport;
 
 mod membership;
+mod consensus;
 
 pub use self::cluster::Cluster;
 pub use self::error::{Error, Result};

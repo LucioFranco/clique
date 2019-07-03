@@ -18,6 +18,7 @@ pub enum RequestKind {
     PreJoin(PreJoinMessage),
     Join(JoinMessage),
     Probe,
+    Consensus(Consensus),
 }
 
 #[derive(Debug)]
@@ -25,6 +26,16 @@ pub enum ResponseKind {
     Join(JoinResponse),
     Response,
     Probe,
+    Consensus(Consensus),
+}
+
+#[derive(Debug)]
+pub enum Consensus {
+    FastRoundPhase1bMessage(FastRoundPhase1bMessage),
+    Phase1aMessage(Phase1aMessage),
+    Phase1bMessage(Phase1bMessage),
+    Phase2aMessage(Phase2aMessage),
+    Phase2bMessage(Phase2bMessage),
 }
 
 #[derive(Debug)]
@@ -61,6 +72,21 @@ pub enum JoinStatus {
     ConfigChanged,
     MembershipRejected,
 }
+
+#[derive(Debug)]
+pub struct FastRoundPhase1bMessage;
+
+#[derive(Debug)]
+pub struct Phase1aMessage;
+
+#[derive(Debug)]
+pub struct Phase1bMessage;
+
+#[derive(Debug)]
+pub struct Phase2aMessage;
+
+#[derive(Debug)]
+pub struct Phase2bMessage;
 
 #[derive(Debug)]
 pub struct Metadata {

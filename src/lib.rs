@@ -9,6 +9,7 @@ pub mod cluster;
 mod error;
 pub mod transport;
 
+mod consensus;
 mod membership;
 
 pub use self::cluster::Cluster;

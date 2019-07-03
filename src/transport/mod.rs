@@ -20,6 +20,13 @@ pub trait Server<T> {
     fn start(&mut self, target: T) -> Self::Future;
 }
 
+pub trait Broadcast {
+    type Error: std::error::Error;
+    type Future: Future<Output = Vec<Result<Response, Self::Error>>>;
+
+    fn broadcast(&mut self, req: Request) -> Self::Future;
+}
+
 #[derive(Debug)]
 pub struct Request {
     kind: proto::RequestKind,
@@ -45,5 +52,9 @@ impl Request {
             .send(Ok(res))
             // TODO: prob should be transport dropped
             .map_err(|_| Error::new_broken_pipe(None))
+    }
+
+    pub fn kind(&self) -> &proto::RequestKind {
+        &self.kind
     }
 }

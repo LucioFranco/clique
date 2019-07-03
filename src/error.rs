@@ -14,7 +14,7 @@ pub(crate) enum ErrorKind {
     Start,
     Join,
     BrokenPipe,
-    UnexpectedRequestType
+    UnexpectedRequestType,
 }
 
 impl Error {

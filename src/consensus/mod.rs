@@ -1,28 +1,40 @@
 use futures::{FutureExt, Stream, StreamExt};
 
+mod paxos;
+
+use paxos::Paxos;
+
 use crate::{
     error::{Error, Result},
     transport::{
         proto::{self, Endpoint},
-        Client, Request, Response,
+        Broadcast, Client, Request, Response,
     },
 };
 
-pub struct FastPaxos<'a, C> {
-    client: &'a C,
+pub struct FastPaxos<'a, C, B> {
+    broadcast: &'a mut B,
     my_addr: Endpoint,
     size: usize,
+    paxos: Paxos<'a, C>,
 }
 
-impl<'a, C> FastPaxos<'a, C> {
-    pub fn new(my_addr: Endpoint, size: usize, client: &mut C) -> FastPaxos<C>
+impl<'a, C, B> FastPaxos<'a, C, B> {
+    pub fn new(
+        my_addr: Endpoint,
+        size: usize,
+        client: &'a mut C,
+        broadcast: &'a mut B,
+    ) -> FastPaxos<'a, C, B>
     where
         C: Client,
+        B: Broadcast,
     {
         FastPaxos {
-            my_addr,
+            my_addr: my_addr.clone(),
+            broadcast,
             size,
-            client,
+            paxos: Paxos::new(client, size, my_addr),
         }
     }
 
@@ -33,32 +45,16 @@ impl<'a, C> FastPaxos<'a, C> {
 
     pub async fn handle_message(&self, request: Request) -> Result<Response> {
         match request.kind() {
-            proto::RequestKind::Consensus(_) => self.handle_fast_round_message(request).await,
-            proto::RequestKind::Consensus(_) => self.handle_phase_1a_message(request).await,
-            proto::RequestKind::Consensus(_) => self.handle_phase_1b_message(request).await,
-            proto::RequestKind::Consensus(_) => self.handle_phase_2a_message(request).await,
-            proto::RequestKind::Consensus(_) => self.handle_phase_2b_message(request).await,
+            proto::RequestKind::Consensus(_) => self.handle_fast_round(request).await,
+            proto::RequestKind::Consensus(_) => self.paxos.handle_phase_1a(request).await,
+            proto::RequestKind::Consensus(_) => self.paxos.handle_phase_1b(request).await,
+            proto::RequestKind::Consensus(_) => self.paxos.handle_phase_2a(request).await,
+            proto::RequestKind::Consensus(_) => self.paxos.handle_phase_2b(request).await,
             _ => Err(Error::new_unexpected_request(None)),
         }
     }
 
-    async fn handle_fast_round_message(&self, request: Request) -> crate::Result<Response> {
-        unimplemented!()
-    }
-
-    async fn handle_phase_1a_message(&self, request: Request) -> crate::Result<Response> {
-        unimplemented!()
-    }
-
-    async fn handle_phase_1b_message(&self, request: Request) -> crate::Result<Response> {
-        unimplemented!()
-    }
-
-    async fn handle_phase_2a_message(&self, request: Request) -> crate::Result<Response> {
-        unimplemented!()
-    }
-
-    async fn handle_phase_2b_message(&self, request: Request) -> crate::Result<Response> {
+    async fn handle_fast_round(&self, request: Request) -> crate::Result<Response> {
         unimplemented!()
     }
 }

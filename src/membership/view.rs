@@ -1,8 +1,17 @@
-use crate::{ConfigId, Endpoint, Error, NodeId, Result};
+use crate::{
+    common::{ConfigId, Endpoint, NodeId},
+    error::{Error, Result},
+};
 use indexmap::IndexSet;
-use std::{collections::HashSet, ops::Bound};
+use std::{
+    cmp::Ordering,
+    collections::{BTreeSet, HashSet},
+    hash::Hasher,
+    ops::Bound,
+};
+use twox_hash::XxHash64;
 
-type Ring = IndexSet<Endpoint>;
+type Ring = BTreeSet<SeededEndpoint>;
 
 #[derive(Debug, Clone)]
 pub struct View {
@@ -18,6 +27,12 @@ pub struct View {
 struct Configuration {
     node_ids: Vec<NodeId>,
     endpoints: Vec<Endpoint>,
+}
+
+#[derive(Debug, Clone, Eq)]
+pub struct SeededEndpoint {
+    seed: u64,
+    endpoint: Endpoint,
 }
 
 impl View {
@@ -95,19 +110,20 @@ impl View {
     }
 
     fn get_successor(&self, ring: &Ring, node: &Endpoint) -> Result<Option<Endpoint>> {
-        if ring.len() <= 1 {
-            return Ok(None);
-        }
+        // if ring.len() <= 1 {
+        //     return Ok(None);
+        // }
 
-        let (i, _) = ring.get_full(node).ok_or(Error::new_node_not_in_ring())?;
+        // let (i, _) = ring.get_full(node).ok_or(Error::new_node_not_in_ring())?;
 
-        let succ = if let Some(succ) = ring.get_index(i + 1) {
-            Some(succ)
-        } else {
-            ring.get_index(0)
-        };
+        // let succ = if let Some(succ) = ring.get_index(i + 1) {
+        //     Some(succ)
+        // } else {
+        //     ring.get_index(0)
+        // };
 
-        Ok(succ.map(|s| s.clone()))
+        // Ok(succ.map(|s| s.clone()))
+        unimplemented!()
     }
 
     fn is_node_present(&self, node_id: &NodeId) -> bool {
@@ -121,11 +137,47 @@ impl Configuration {
     }
 }
 
+impl SeededEndpoint {
+    pub fn new(endpoint: Endpoint, seed: u64) -> Self {
+        Self { endpoint, seed }
+    }
+
+    fn hash(&self) -> u64 {
+        let mut hash = XxHash64::with_seed(self.seed);
+        hash.write(self.endpoint.as_bytes());
+        hash.finish()
+    }
+}
+
+impl PartialOrd for SeededEndpoint {
+    fn partial_cmp(&self, other: &SeededEndpoint) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for SeededEndpoint {
+    fn cmp(&self, other: &SeededEndpoint) -> Ordering {
+        self.hash().cmp(&other.hash())
+    }
+}
+
+impl PartialEq for SeededEndpoint {
+    fn eq(&self, other: &SeededEndpoint) -> bool {
+        self.hash() == other.hash()
+    }
+}
+
+impl From<SeededEndpoint> for Endpoint {
+    fn from(t: SeededEndpoint) -> Endpoint {
+        t.endpoint
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::NodeId;
     use crate::error::ErrorKind;
-    use crate::NodeId;
 
     #[test]
     fn ring_add() {

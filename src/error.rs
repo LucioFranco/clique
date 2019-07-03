@@ -14,7 +14,7 @@ pub(crate) enum ErrorKind {
     Start,
     Join,
     BrokenPipe,
-    IncorrectArgument
+    UnexpectedRequestType
 }
 
 impl Error {
@@ -30,8 +30,8 @@ impl Error {
         Self::new(ErrorKind::Join, source)
     }
 
-    pub(crate) fn new_incorrect_argument(source: Option<Source>) -> Self {
-        Self::new(ErrorKind::IncorrectArgument, source)
+    pub(crate) fn new_unexpected_request(source: Option<Source>) -> Self {
+        Self::new(ErrorKind::UnexpectedRequestType, source)
     }
 }
 

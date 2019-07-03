@@ -46,4 +46,8 @@ impl Request {
             // TODO: prob should be transport dropped
             .map_err(|_| Error::new_broken_pipe(None))
     }
+
+    pub fn kind(&self) -> &proto::RequestKind {
+        &self.kind
+    }
 }

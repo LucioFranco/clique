@@ -18,11 +18,7 @@ pub enum RequestKind {
     PreJoin(PreJoinMessage),
     Join(JoinMessage),
     Probe,
-    FastRoundPhase1bMessage(FastRoundPhase1bMessage),
-    Phase1aMessage(Phase1aMessage);
-    Phase1bMessage(Phase1bMessage);
-    Phase2aMessage(Phase2aMessage);
-    Phase2bMessage(Phase2bMessage);
+    Consensus(Consensus),
 }
 
 #[derive(Debug)]
@@ -30,11 +26,16 @@ pub enum ResponseKind {
     Join(JoinResponse),
     Response,
     Probe,
+    Consensus(Consensus),
+}
+
+#[derive(Debug)]
+pub enum Consensus {
     FastRoundPhase1bMessage(FastRoundPhase1bMessage),
-    Phase1aMessage(Phase1aMessage);
-    Phase1bMessage(Phase1aMessage);
-    Phase2aMessage(Phase1aMessage);
-    Phase2bMessage(Phase1aMessage);
+    Phase1aMessage(Phase1aMessage),
+    Phase1bMessage(Phase1bMessage),
+    Phase2aMessage(Phase2aMessage),
+    Phase2bMessage(Phase2bMessage),
 }
 
 #[derive(Debug)]

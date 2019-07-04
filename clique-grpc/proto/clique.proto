@@ -13,3 +13,9 @@ message Request
 message Response
 {
 }
+
+message Rank
+{
+    int32 round = 1;
+    int32 nodeIndex = 2;
+}

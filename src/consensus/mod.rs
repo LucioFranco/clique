@@ -27,7 +27,7 @@ pub struct FastPaxos<'a, C, B> {
     decision_tx: oneshot::Sender<Vec<Endpoint>>,
     /// Channel the paxos instance will use to communicate with us about decision
     // paxos_rx: oneshot::Receiver<Vec<Endpoint>>,
-    scheduled_paxos: Option<Box<Future<Output = Result<()>>>>,
+    scheduled_paxos: Option<Box<dyn Future<Output = Result<()>>>>,
 }
 
 impl<'a, C, B> FastPaxos<'a, C, B> {

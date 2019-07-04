@@ -1,6 +1,5 @@
 use crate::{
-    common::Endpoint,
-    error::{Error, Result},
+    error::Result,
     transport::{
         proto::{Endpoint, Phase1bMessage, Phase2aMessage, Rank},
         Client, Request, Response,
@@ -28,7 +27,10 @@ pub struct Paxos<'a, C> {
 }
 
 impl<'a, C> Paxos<'a, C> {
-    pub fn new(client: &'a mut C, size: usize, my_addr: Endpoint, config_id: usize) -> Paxos<C> {
+    pub fn new(client: &'a mut C, size: usize, my_addr: Endpoint, config_id: usize) -> Paxos<C>
+    where
+        C: Client,
+    {
         Paxos {
             client,
             size,

@@ -1,9 +1,10 @@
 use std::{
     sync::atomic::{AtomicBool, Ordering},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use futures::{Future, FutureExt, Stream, StreamExt};
+use rand::Rng;
 use tokio_sync::oneshot;
 use tokio_timer::Delay;
 
@@ -16,6 +17,8 @@ use crate::{
     error::{Error, Result},
     transport::{proto, Broadcast, Client, Request, Response},
 };
+
+const BASE_DELAY: u64 = 1000;
 
 pub struct FastPaxos<'a, C, B> {
     broadcast: &'a mut B,
@@ -58,9 +61,14 @@ impl<'a, C, B> FastPaxos<'a, C, B> {
     }
 
     pub async fn propose(&self, proposal: Vec<Endpoint>) {
-        let mut paxos_delay = 0;
-        // TODO: register proposal with regular paxos instance
-        unimplemented!();
+        let mut paxos_delay = Delay::new(Instant::now() + self.get_random_delay()).fuse();
+
+        futures::select! {
+            _ = paxos_delay.next() => {
+                self.start_classic_round().await
+            },
+            _ = self.broadcast.broadcast(Phase2bMessage) => {}
+        };
     }
 
     pub async fn handle_message(&self, request: Request) -> Result<Response> {
@@ -91,7 +99,20 @@ impl<'a, C, B> FastPaxos<'a, C, B> {
             .map_err(|_| Error::new_broken_pipe(None))
     }
 
+    async fn start_classic_round(&mut self) -> Result<()> {
+        if !self.decided.load(Ordering::SeqCst) {
+            self.paxos.start_round().await
+        } else {
+            Ok(())
+        }
+    }
+
     fn get_random_delay(&self) -> Duration {
-        Duration::from_secs(10)
+        let jitter_rate: f64 = 1f64 / self.size as f64;
+        let mut rng = rand::thread_rng();
+
+        let jitter = ((-1000f64 * (1.0f64 - rng.gen::<f64>()).ln()) / jitter_rate) as u64;
+
+        Duration::from_millis(jitter + BASE_DELAY)
     }
 }

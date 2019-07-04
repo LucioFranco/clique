@@ -55,7 +55,7 @@ impl<'a, C> Paxos<'a, C> {
         }
     }
 
-    async fn start_round(&mut self) -> Result<Response> {
+    async fn start_round(&mut self) -> Result<()> {
         unimplemented!()
     }
 

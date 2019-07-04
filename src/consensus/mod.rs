@@ -28,6 +28,7 @@ pub struct FastPaxos<'a, C, B> {
     /// Channel the paxos instance will use to communicate with us about decision
     // paxos_rx: oneshot::Receiver<Vec<Endpoint>>,
     scheduled_paxos: Option<Box<dyn Future<Output = Result<()>>>>,
+    config_id: usize,
 }
 
 impl<'a, C, B> FastPaxos<'a, C, B> {
@@ -38,18 +39,21 @@ impl<'a, C, B> FastPaxos<'a, C, B> {
         broadcast: &'a mut B,
         decision_tx: oneshot::Sender<Vec<Endpoint>>,
         proposal_rx: oneshot::Receiver<Vec<Endpoint>>,
+        config_id: usize,
     ) -> FastPaxos<'a, C, B>
     where
         C: Client,
         B: Broadcast,
     {
         FastPaxos {
-            my_addr: my_addr.clone(),
             broadcast,
-            size,
             decision_tx,
-            paxos: Paxos::new(client, size, my_addr),
+            config_id,
+            size: size,
+            my_addr: my_addr.clone(),
+            paxos: Paxos::new(client, size, my_addr, config_id),
             decided: AtomicBool::new(false),
+            scheduled_paxos: None,
         }
     }
 
@@ -74,16 +78,20 @@ impl<'a, C, B> FastPaxos<'a, C, B> {
         unimplemented!()
     }
 
-    async fn on_decide(&mut self, hosts: Vec<Endpoint>) {
+    async fn on_decide(self, hosts: Vec<Endpoint>) -> Result<()> {
         // This is the only place where the value is set to `true`.
         self.decided.store(true, Ordering::SeqCst);
 
-        if let Some(paxos_instance) = self.scheduled_paxos {
+        if let Some(paxos_instance) = &self.scheduled_paxos {
             drop(paxos_instance);
         }
 
-        self.decision_tx.send(hosts).await;
+        self.decision_tx
+            .send(hosts)
+            .map_err(|_| Error::new_broken_pipe(None))
     }
 
-    fn get_random_delay(&self) -> Duration {}
+    fn get_random_delay(&self) -> Duration {
+        Duration::from_secs(10)
+    }
 }

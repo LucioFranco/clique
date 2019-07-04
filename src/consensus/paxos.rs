@@ -21,7 +21,7 @@ pub struct Paxos<'a, C> {
     crnd: Rank,
     /// The value we have picked for a given round `i`
     cval: Vec<Endpoint>,
-    configuration_id: usize,
+    config_id: usize,
     phase_1b_messages: Vec<Phase1bMessage>,
     phase_2a_messages: Vec<Phase2aMessage>,
 }
@@ -35,14 +35,14 @@ impl<'a, C> Paxos<'a, C> {
             client,
             size,
             my_addr,
-            configuration_id: config_id,
+            config_id,
             crnd: Rank {
                 round: 0,
                 node_index: 0,
             },
             rnd: Rank {
                 round: 0,
-                node_indexL: 0,
+                node_index: 0,
             },
             vrnd: Rank {
                 round: 0,
@@ -50,6 +50,8 @@ impl<'a, C> Paxos<'a, C> {
             },
             cval: Vec::new(),
             vval: Vec::new(),
+            phase_1b_messages: Vec::new(),
+            phase_2a_messages: Vec::new(),
         }
     }
 

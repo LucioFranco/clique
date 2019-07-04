@@ -3,7 +3,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use futures::{Future, FutureExt, Stream, StreamExt, stream::FuturesUnordered};
+use futures::{stream::FuturesUnordered, Future, FutureExt, Stream, StreamExt};
 use rand::Rng;
 use tokio_sync::oneshot;
 use tokio_timer::Delay;
@@ -68,20 +68,14 @@ impl<'a, C, B> FastPaxos<'a, C, B> {
 
     pub async fn propose(&self, proposal: Vec<Endpoint>) -> Result<()> {
         let mut paxos_delay = Delay::new(Instant::now() + self.get_random_delay()).fuse();
-        let (cancel_tx, cancel_rx) = oneshot::channel::<CancelPaxos>();
-        let mut fut_runner = FuturesUnordered::new();
 
-        fut_runner.push(async {
-            futures::select! {
-                _ = paxos_delay => {
-                    self.start_classic_round().await
-                },
-                cancel = cancel_rx.fuse().select_next_some() => { Ok(()) }
-            };
-        });
+        // a hacky way to schedule a task after the delay
+        async {
+            paxos_delay.await;
+            self.start_classic_round().await;
+        }.await;
 
         self.broadcast.broadcast(Phase2bMessage {}).await;
-        fut_runner.await;
 
         Ok(())
     }

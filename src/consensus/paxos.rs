@@ -1,7 +1,7 @@
 use crate::{
     error::Result,
     transport::{
-        proto::{Endpoint, Phase1bMessage, Phase2aMessage, Rank},
+        proto::{ConfigId, Endpoint, Phase1bMessage, Phase2aMessage, Rank},
         Client, Request, Response,
     },
 };
@@ -21,13 +21,13 @@ pub struct Paxos<'a, C> {
     crnd: Rank,
     /// The value we have picked for a given round `i`
     cval: Vec<Endpoint>,
-    config_id: usize,
+    config_id: ConfigId,
     phase_1b_messages: Vec<Phase1bMessage>,
     phase_2a_messages: Vec<Phase2aMessage>,
 }
 
 impl<'a, C> Paxos<'a, C> {
-    pub fn new(client: &'a mut C, size: usize, my_addr: Endpoint, config_id: usize) -> Paxos<C>
+    pub fn new(client: &'a mut C, size: usize, my_addr: Endpoint, config_id: ConfigId) -> Paxos<C>
     where
         C: Client,
     {

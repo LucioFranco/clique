@@ -16,7 +16,7 @@ use crate::{
     common::Endpoint,
     error::{Error, Result},
     transport::{
-        proto::{self, Endpoint, Phase2bMessage},
+        proto::{self, Endpoint, Phase2bMessage, ConfigId},
         Broadcast, Client, Request, Response,
     },
 };
@@ -30,14 +30,13 @@ pub struct FastPaxos<'a, C, B> {
     broadcast: &'a mut B,
     my_addr: Endpoint,
     size: usize,
-    paxos: Paxos<'a, C>,
     decided: AtomicBool,
     /// Channel used to communicate with upstream about decision
     decision_tx: oneshot::Sender<Vec<Endpoint>>,
     /// Channel the paxos instance will use to communicate with us about decision
     // paxos_rx: oneshot::Receiver<Vec<Endpoint>>,
-    scheduled_paxos: Option<Box<dyn Future<Output = Result<()>>>>,
-    config_id: usize,
+    paxos: Option<Paxos<'a, C>>,
+    config_id: ConfigId,
 }
 
 impl<'a, C, B> FastPaxos<'a, C, B> {
@@ -48,7 +47,7 @@ impl<'a, C, B> FastPaxos<'a, C, B> {
         broadcast: &'a mut B,
         decision_tx: oneshot::Sender<Vec<Endpoint>>,
         proposal_rx: oneshot::Receiver<Vec<Endpoint>>,
-        config_id: usize,
+        config_id: ConfigId,
     ) -> FastPaxos<'a, C, B>
     where
         C: Client,
@@ -60,9 +59,8 @@ impl<'a, C, B> FastPaxos<'a, C, B> {
             config_id,
             size: size,
             my_addr: my_addr.clone(),
-            paxos: Paxos::new(client, size, my_addr, config_id),
             decided: AtomicBool::new(false),
-            scheduled_paxos: None,
+            paxos: Some(Paxos::new(client, my_addr, config_id)),
         }
     }
 
@@ -82,11 +80,19 @@ impl<'a, C, B> FastPaxos<'a, C, B> {
 
     pub async fn handle_message(&self, request: Request) -> Result<Response> {
         match request.kind() {
-            proto::RequestKind::Consensus(_) => self.handle_fast_round(request).await,
-            proto::RequestKind::Consensus(_) => self.paxos.handle_phase_1a(request).await,
-            proto::RequestKind::Consensus(_) => self.paxos.handle_phase_1b(request).await,
-            proto::RequestKind::Consensus(_) => self.paxos.handle_phase_2a(request).await,
-            proto::RequestKind::Consensus(_) => self.paxos.handle_phase_2b(request).await,
+            proto::RequestKind::Consensus(req_type) => {
+                if let Some(paxos) = self.paxos {
+                    match req_type {
+                        proto::Consensus::FastRoundPhase1bMessage(_) => self.handle_fast_round(request).await,
+                        proto::Consensus::Phase1aMessage(_) => paxos.handle_phase_1a(request).await,
+                        proto::Consensus::Phase1bMessage(_) => paxos.handle_phase_1b(request).await,
+                        proto::Consensus::Phase2aMessage(_) => paxos.handle_phase_2a(request).await,
+                        proto::Consensus::Phase2bMessage(_) => paxos.handle_phase_2b(request).await,
+                    }
+                } else {
+                    Err(Error::new_unexpected_request(None))
+                }
+            },
             _ => Err(Error::new_unexpected_request(None)),
         }
     }
@@ -99,8 +105,10 @@ impl<'a, C, B> FastPaxos<'a, C, B> {
         // This is the only place where the value is set to `true`.
         self.decided.store(true, Ordering::SeqCst);
 
-        if let Some(paxos_instance) = &self.scheduled_paxos {
-            drop(paxos_instance);
+        let paxos_instance = self.paxos.take();
+
+        if let Some(instance) = paxos_instance {
+            drop(instance);
         }
 
         self.decision_tx
@@ -110,7 +118,11 @@ impl<'a, C, B> FastPaxos<'a, C, B> {
 
     async fn start_classic_round(&mut self) -> Result<()> {
         if !self.decided.load(Ordering::SeqCst) {
-            self.paxos.start_round().await
+            if let Some(paxos) = self.paxos {
+                paxos.start_round().await
+            } else {
+                Ok(())
+            }
         } else {
             Ok(())
         }

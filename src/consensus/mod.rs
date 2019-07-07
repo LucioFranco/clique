@@ -1,5 +1,6 @@
 use std::{
-    sync::atomic::{AtomicBool, Ordering},
+    collections::{HashMap, HashSet},
+    sync::atomic::{AtomicBool, AtomicUsize, Ordering},
     time::{Duration, Instant},
 };
 
@@ -16,7 +17,7 @@ use crate::{
     common::Endpoint,
     error::{Error, Result},
     transport::{
-        proto::{self, Endpoint, Phase2bMessage, ConfigId},
+        proto::{self, ConfigId, Endpoint, Phase2bMessage},
         Broadcast, Client, Request, Response,
     },
 };
@@ -36,7 +37,10 @@ pub struct FastPaxos<'a, C, B> {
     /// Channel the paxos instance will use to communicate with us about decision
     // paxos_rx: oneshot::Receiver<Vec<Endpoint>>,
     paxos: Option<Paxos<'a, C>>,
+    /// Latest configuration we accepted.
     config_id: ConfigId,
+    votes_received: HashSet<Endpoint>, // should be a bitset?
+    votes_per_proposal: HashMap<Vec<Endpoint>, AtomicUsize>,
 }
 
 impl<'a, C, B> FastPaxos<'a, C, B> {
@@ -61,6 +65,8 @@ impl<'a, C, B> FastPaxos<'a, C, B> {
             my_addr: my_addr.clone(),
             decided: AtomicBool::new(false),
             paxos: Some(Paxos::new(client, my_addr, config_id)),
+            votes_received: HashSet::default(),
+            votes_per_proposal: HashMap::default(),
         }
     }
 
@@ -71,34 +77,84 @@ impl<'a, C, B> FastPaxos<'a, C, B> {
         async {
             paxos_delay.await;
             self.start_classic_round().await;
-        }.await;
+        }
+            .await;
 
-        self.broadcast.broadcast(Phase2bMessage {}).await;
+        let (tx, rx) = oneshot::channel();
 
+        let kind = proto::RequestKind::Consensus(proto::Consensus::FastRoundPhase2bMessage(
+            proto::FastRoundPhase2bMessage {
+                sender: self.my_addr,
+                config_id: self.config_id,
+                endpoints: proposal,
+            },
+        ));
+
+        let request = Request::new(tx, kind);
+
+        self.broadcast.broadcast(request).await;
+        rx.await;
+
+        // TODO: better error type
         Ok(())
     }
 
-    pub async fn handle_message(&self, request: Request) -> Result<Response> {
+    pub async fn handle_message(&self, request: Request) -> Result<()> {
         match request.kind() {
             proto::RequestKind::Consensus(req_type) => {
                 if let Some(paxos) = self.paxos {
                     match req_type {
-                        proto::Consensus::FastRoundPhase1bMessage(_) => self.handle_fast_round(request).await,
-                        proto::Consensus::Phase1aMessage(_) => paxos.handle_phase_1a(request).await,
-                        proto::Consensus::Phase1bMessage(_) => paxos.handle_phase_1b(request).await,
-                        proto::Consensus::Phase2aMessage(_) => paxos.handle_phase_2a(request).await,
-                        proto::Consensus::Phase2bMessage(_) => paxos.handle_phase_2b(request).await,
+                        proto::Consensus::FastRoundPhase2bMessage(msg) => {
+                            self.handle_fast_round(msg).await
+                        }
+                        // TODO: need to figure out communication b/w paxos and fast paxos
+                        // proto::Consensus::Phase1aMessage(_) => paxos.handle_phase_1a(request).await,
+                        // proto::Consensus::Phase1bMessage(_) => paxos.handle_phase_1b(request).await,
+                        // proto::Consensus::Phase2aMessage(_) => paxos.handle_phase_2a(request).await,
+                        // proto::Consensus::Phase2bMessage(_) => paxos.handle_phase_2b(request).await,
                     }
                 } else {
                     Err(Error::new_unexpected_request(None))
                 }
-            },
+            }
             _ => Err(Error::new_unexpected_request(None)),
         }
     }
 
-    async fn handle_fast_round(&self, request: Request) -> crate::Result<Response> {
-        unimplemented!()
+    async fn handle_fast_round(
+        &self,
+        request: &proto::FastRoundPhase2bMessage,
+    ) -> crate::Result<()> {
+        if request.config_id != self.config_id {
+            return Ok(());
+        }
+
+        if self.votes_received.contains(&request.sender) {
+            return Ok(());
+        }
+
+        if (self.decided.load(Ordering::SeqCst)) {
+            return Ok(());
+        }
+
+        self.votes_received.insert(request.sender.clone());
+
+        let count = self
+            .votes_per_proposal
+            .entry(request.endpoints)
+            .and_modify(|votes| {
+                votes.fetch_add(1, Ordering::SeqCst);
+            })
+            .or_insert(AtomicUsize::new(0));
+
+        let F = ((self.size - 1) as f64 / 4f64).floor();
+
+        if (self.votes_received.len() >= (self.size as f64 - F) as usize) {
+            if (AtomicUsize(count) >= (self.size as f64 - F) as usize) {
+                self.on_decide(request.endpoints);
+            }
+        }
+        Ok(())
     }
 
     async fn on_decide(self, hosts: Vec<Endpoint>) -> Result<()> {
@@ -115,7 +171,6 @@ impl<'a, C, B> FastPaxos<'a, C, B> {
             .send(hosts)
             .map_err(|_| Error::new_broken_pipe(None))
     }
-
     async fn start_classic_round(&mut self) -> Result<()> {
         if !self.decided.load(Ordering::SeqCst) {
             if let Some(paxos) = self.paxos {

@@ -20,7 +20,7 @@ pub enum ResponseKind {
 
 #[derive(Debug)]
 pub enum Consensus {
-    FastRoundPhase1bMessage(FastRoundPhase1bMessage),
+    FastRoundPhase2bMessage(FastRoundPhase2bMessage),
     Phase1aMessage(Phase1aMessage),
     Phase1bMessage(Phase1bMessage),
     Phase2aMessage(Phase2aMessage),
@@ -63,19 +63,43 @@ pub enum JoinStatus {
 }
 
 #[derive(Debug)]
-pub struct FastRoundPhase1bMessage;
+pub struct FastRoundPhase2bMessage {
+    pub sender: Endpoint,
+    pub config_id: ConfigId,
+    pub endpoints: Vec<Endpoint>,
+}
 
 #[derive(Debug)]
-pub struct Phase1aMessage;
+pub struct Phase1aMessage {
+    pub sender: Endpoint,
+    pub config_id: ConfigId,
+    pub rank: Rank,
+}
 
 #[derive(Debug)]
-pub struct Phase1bMessage;
+pub struct Phase1bMessage {
+    pub sender: Endpoint,
+    pub config_id: ConfigId,
+    pub rnd: Rank,
+    pub vrnd: Rank,
+    pub vval: Vec<Endpoint>,
+}
 
 #[derive(Debug)]
-pub struct Phase2aMessage;
+pub struct Phase2aMessage {
+    pub sender: Endpoint,
+    pub config_id: ConfigId,
+    pub rnd: Rank,
+    pub vval: Vec<Endpoint>,
+}
 
 #[derive(Debug)]
-pub struct Phase2bMessage;
+pub struct Phase2bMessage {
+    pub sender: Endpoint,
+    pub config_id: ConfigId,
+    pub rnd: Rank,
+    pub endpoints: Vec<Endpoint>,
+}
 
 #[derive(Debug)]
 pub struct Metadata {

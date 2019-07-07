@@ -2,7 +2,7 @@ use std::{error, fmt};
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-type Source = Box<dyn error::Error + Send + Sync + 'static>;
+type Source = Box<dyn error::Error + Send + Sync>;
 
 pub struct Error {
     kind: ErrorKind,

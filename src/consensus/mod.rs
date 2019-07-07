@@ -43,7 +43,11 @@ pub struct FastPaxos<'a, C, B> {
     votes_per_proposal: HashMap<Vec<Endpoint>, AtomicUsize>,
 }
 
-impl<'a, C, B> FastPaxos<'a, C, B> {
+impl<'a, C, B> FastPaxos<'a, C, B>
+where
+    C: Client,
+    B: Broadcast,
+{
     pub fn new(
         my_addr: Endpoint,
         size: usize,
@@ -52,11 +56,7 @@ impl<'a, C, B> FastPaxos<'a, C, B> {
         decision_tx: oneshot::Sender<Vec<Endpoint>>,
         proposal_rx: oneshot::Receiver<Vec<Endpoint>>,
         config_id: ConfigId,
-    ) -> FastPaxos<'a, C, B>
-    where
-        C: Client,
-        B: Broadcast,
-    {
+    ) -> FastPaxos<'a, C, B> {
         FastPaxos {
             broadcast,
             decision_tx,
@@ -64,16 +64,15 @@ impl<'a, C, B> FastPaxos<'a, C, B> {
             size: size,
             my_addr: my_addr.clone(),
             decided: AtomicBool::new(false),
-            paxos: Some(Paxos::new(client, my_addr, config_id)),
+            paxos: Some(Paxos::new(client, size, my_addr, config_id)),
             votes_received: HashSet::default(),
             votes_per_proposal: HashMap::default(),
         }
     }
 
-    pub async fn propose(&self, proposal: Vec<Endpoint>) -> Result<()> {
+    pub async fn propose(&mut self, proposal: Vec<Endpoint>) -> Result<()> {
         let mut paxos_delay = Delay::new(Instant::now() + self.get_random_delay()).fuse();
 
-        // a hacky way to schedule a task after the delay
         async {
             paxos_delay.await;
             self.start_classic_round().await;
@@ -84,7 +83,7 @@ impl<'a, C, B> FastPaxos<'a, C, B> {
 
         let kind = proto::RequestKind::Consensus(proto::Consensus::FastRoundPhase2bMessage(
             proto::FastRoundPhase2bMessage {
-                sender: self.my_addr,
+                sender: self.my_addr.clone(),
                 config_id: self.config_id,
                 endpoints: proposal,
             },
@@ -99,19 +98,16 @@ impl<'a, C, B> FastPaxos<'a, C, B> {
         Ok(())
     }
 
-    pub async fn handle_message(&self, request: Request) -> Result<()> {
+    pub async fn handle_message(&mut self, request: Request) -> Result<Vec<Endpoint>> {
         match request.kind() {
             proto::RequestKind::Consensus(req_type) => {
-                if let Some(paxos) = self.paxos {
+                if self.paxos.is_some() {
                     match req_type {
                         proto::Consensus::FastRoundPhase2bMessage(msg) => {
                             self.handle_fast_round(msg).await
                         }
                         // TODO: need to figure out communication b/w paxos and fast paxos
-                        // proto::Consensus::Phase1aMessage(_) => paxos.handle_phase_1a(request).await,
-                        // proto::Consensus::Phase1bMessage(_) => paxos.handle_phase_1b(request).await,
-                        // proto::Consensus::Phase2aMessage(_) => paxos.handle_phase_2a(request).await,
-                        // proto::Consensus::Phase2bMessage(_) => paxos.handle_phase_2b(request).await,
+                        _ => unimplemented!(),
                     }
                 } else {
                     Err(Error::new_unexpected_request(None))
@@ -121,27 +117,27 @@ impl<'a, C, B> FastPaxos<'a, C, B> {
         }
     }
 
-    async fn handle_fast_round(
-        &self,
-        request: &proto::FastRoundPhase2bMessage,
-    ) -> crate::Result<()> {
+    async fn handle_fast_round<'b>(
+        &'b mut self,
+        request: &'b proto::FastRoundPhase2bMessage,
+    ) -> crate::Result<Vec<Endpoint>> {
         if request.config_id != self.config_id {
-            return Ok(());
+            return Err(Error::new_unexpected_request(None));
         }
 
         if self.votes_received.contains(&request.sender) {
-            return Ok(());
+            return Err(Error::new_unexpected_request(None));
         }
 
         if (self.decided.load(Ordering::SeqCst)) {
-            return Ok(());
+            return Err(Error::new_unexpected_request(None));
         }
 
         self.votes_received.insert(request.sender.clone());
 
         let count = self
             .votes_per_proposal
-            .entry(request.endpoints)
+            .entry(request.endpoints.clone())
             .and_modify(|votes| {
                 votes.fetch_add(1, Ordering::SeqCst);
             })
@@ -150,14 +146,16 @@ impl<'a, C, B> FastPaxos<'a, C, B> {
         let F = ((self.size - 1) as f64 / 4f64).floor();
 
         if (self.votes_received.len() >= (self.size as f64 - F) as usize) {
-            if (AtomicUsize(count) >= (self.size as f64 - F) as usize) {
-                self.on_decide(request.endpoints);
+            if (count.load(Ordering::SeqCst) >= (self.size as f64 - F) as usize) {
+                return self.on_decide(request.endpoints.clone()).await;
             }
         }
-        Ok(())
+
+        // TODO: do we need new error type here?
+        Err(Error::new_unexpected_request(None))
     }
 
-    async fn on_decide(self, hosts: Vec<Endpoint>) -> Result<()> {
+    async fn on_decide(&mut self, hosts: Vec<Endpoint>) -> Result<Vec<Endpoint>> {
         // This is the only place where the value is set to `true`.
         self.decided.store(true, Ordering::SeqCst);
 
@@ -167,20 +165,16 @@ impl<'a, C, B> FastPaxos<'a, C, B> {
             drop(instance);
         }
 
-        self.decision_tx
-            .send(hosts)
-            .map_err(|_| Error::new_broken_pipe(None))
+        Ok(hosts)
     }
+
     async fn start_classic_round(&mut self) -> Result<()> {
         if !self.decided.load(Ordering::SeqCst) {
-            if let Some(paxos) = self.paxos {
-                paxos.start_round().await
-            } else {
-                Ok(())
+            if let Some(paxos) = &mut self.paxos {
+                paxos.start_round().await;
             }
-        } else {
-            Ok(())
         }
+        Ok(())
     }
 
     fn get_random_delay(&self) -> Duration {

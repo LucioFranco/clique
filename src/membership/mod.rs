@@ -1,3 +1,4 @@
+mod ring;
 mod view;
 
 use crate::transport::Request;

@@ -2,16 +2,9 @@ use crate::{
     common::{ConfigId, Endpoint, NodeId},
     error::{Error, Result},
 };
-use indexmap::IndexSet;
-use std::{
-    cmp::Ordering,
-    collections::{BTreeSet, HashSet},
-    hash::Hasher,
-    ops::Bound,
-};
-use twox_hash::XxHash64;
+use std::collections::HashSet;
 
-type Ring = BTreeSet<SeededEndpoint>;
+type Ring = crate::membership::ring::Ring<Endpoint>;
 
 #[derive(Debug, Clone)]
 pub struct View {
@@ -29,20 +22,14 @@ struct Configuration {
     endpoints: Vec<Endpoint>,
 }
 
-#[derive(Debug, Clone, Eq)]
-pub struct SeededEndpoint {
-    seed: u64,
-    endpoint: Endpoint,
-}
-
 impl View {
     pub fn new(k: i32) -> Self {
         assert!(k > 0);
 
         let mut rings = Vec::with_capacity(k as usize);
 
-        for _ in 0..k {
-            rings.push(Ring::new());
+        for i in 0..k {
+            rings.push(Ring::new(i as u64));
         }
 
         Self {
@@ -60,7 +47,7 @@ impl View {
             return Err(Error::new_uuid_already_seen());
         }
 
-        if self.rings[0].contains(&node) {
+        if self.rings[0].contains(node.clone()) {
             return Err(Error::new_node_already_in_ring());
         }
 
@@ -76,12 +63,12 @@ impl View {
     }
 
     pub fn ring_delete(&mut self, node: &Endpoint) -> Result<()> {
-        if !self.rings[0].contains(node) {
+        if !self.rings[0].contains(node.clone()) {
             return Err(Error::new_node_not_in_ring());
         }
 
         for ring in &mut self.rings {
-            ring.remove(node);
+            ring.remove(node.clone());
         }
 
         self.should_update_configuration_id = true;
@@ -110,20 +97,19 @@ impl View {
     }
 
     fn get_successor(&self, ring: &Ring, node: &Endpoint) -> Result<Option<Endpoint>> {
-        // if ring.len() <= 1 {
-        //     return Ok(None);
-        // }
+        if ring.len() <= 1 {
+            return Ok(None);
+        }
 
-        // let (i, _) = ring.get_full(node).ok_or(Error::new_node_not_in_ring())?;
+        let (i, _) = ring.get_full(node).ok_or(Error::new_node_not_in_ring())?;
 
-        // let succ = if let Some(succ) = ring.get_index(i + 1) {
-        //     Some(succ)
-        // } else {
-        //     ring.get_index(0)
-        // };
+        let succ = if let Some(succ) = ring.get_index(i + 1) {
+            Some(succ)
+        } else {
+            ring.get_index(0)
+        };
 
-        // Ok(succ.map(|s| s.clone()))
-        unimplemented!()
+        Ok(succ.map(|s| s.clone()))
     }
 
     fn is_node_present(&self, node_id: &NodeId) -> bool {
@@ -134,42 +120,6 @@ impl View {
 impl Configuration {
     pub fn config_id(&self) -> ConfigId {
         unimplemented!()
-    }
-}
-
-impl SeededEndpoint {
-    pub fn new(endpoint: Endpoint, seed: u64) -> Self {
-        Self { endpoint, seed }
-    }
-
-    fn hash(&self) -> u64 {
-        let mut hash = XxHash64::with_seed(self.seed);
-        hash.write(self.endpoint.as_bytes());
-        hash.finish()
-    }
-}
-
-impl PartialOrd for SeededEndpoint {
-    fn partial_cmp(&self, other: &SeededEndpoint) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for SeededEndpoint {
-    fn cmp(&self, other: &SeededEndpoint) -> Ordering {
-        self.hash().cmp(&other.hash())
-    }
-}
-
-impl PartialEq for SeededEndpoint {
-    fn eq(&self, other: &SeededEndpoint) -> bool {
-        self.hash() == other.hash()
-    }
-}
-
-impl From<SeededEndpoint> for Endpoint {
-    fn from(t: SeededEndpoint) -> Endpoint {
-        t.endpoint
     }
 }
 

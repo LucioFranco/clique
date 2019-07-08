@@ -13,46 +13,41 @@ struct SeededKey<T> {
     seed: u64,
 }
 
-impl<T> Ring<T> {
-    pub fn new(seed: u64) -> Self
-    where
-        T: AsRef<[u8]>,
-    {
+impl<T: AsRef<[u8]>> Ring<T> {
+    pub fn new(seed: u64) -> Self {
         Self {
             seed,
             set: BTreeSet::new(),
         }
     }
 
-    pub fn contains(&self, key: T) -> bool
-    where
-        T: AsRef<[u8]>,
-    {
+    pub fn contains(&self, key: T) -> bool {
         // TODO(lucio): Remove this clone since we only need a `AsRef<[u8]>` to
         // do the `Ord` impl.
         let seeded_key = SeededKey::new(key, self.seed);
         self.set.contains(&seeded_key)
     }
 
-    pub fn insert(&mut self, key: T) -> bool
-    where
-        T: AsRef<[u8]>,
-    {
+    pub fn insert(&mut self, key: T) -> bool {
         let seeded_key = SeededKey::new(key, self.seed);
         self.set.insert(seeded_key)
     }
 
-    pub fn remove(&mut self, key: T) -> bool
-    where
-        T: AsRef<[u8]>,
-    {
+    pub fn get(&mut self, key: T) -> Option<&T> {
+        let seeded_key = SeededKey::new(key, self.seed);
+        self.set.get(&seeded_key).map(|v| &v.key)
+    }
+
+    pub fn remove(&mut self, key: T) -> bool {
         // TODO(lucio): Remove this clone since we only need a `AsRef<[u8]>` to
         // do the `Ord` impl.
         let seeded_key = SeededKey::new(key, self.seed);
         self.set.remove(&seeded_key)
     }
 
-    // pub fn get_full(&self, key: T) ->
+    pub fn get_successor(&self, key: T) -> Option<T> {
+        unimplemented!()
+    }
 
     pub fn len(&self) -> usize {
         self.set.len()
@@ -90,3 +85,16 @@ impl<T: AsRef<[u8]>> PartialEq for SeededKey<T> {
 }
 
 impl<T: AsRef<[u8]>> Eq for SeededKey<T> {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn insert() {
+        let mut ring = Ring::new(0);
+        assert!(ring.insert("test"));
+        assert!(ring.contains("test"));
+    }
+
+}

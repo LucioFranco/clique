@@ -80,7 +80,7 @@ impl View {
         let mut observers = Vec::new();
 
         for ring in &self.rings {
-            let successor = if let Some(s) = self.get_successor(ring, node)? {
+            let successor = if let Some(s) = ring.get_successor(node.clone()) {
                 s
             } else {
                 return Ok(Vec::new());
@@ -94,22 +94,6 @@ impl View {
 
     pub fn get_ring(&self, k: i32) -> Option<&Ring> {
         self.rings.get(k as usize)
-    }
-
-    fn get_successor(&self, ring: &Ring, node: &Endpoint) -> Result<Option<Endpoint>> {
-        if ring.len() <= 1 {
-            return Ok(None);
-        }
-
-        let (i, _) = ring.get_full(node).ok_or(Error::new_node_not_in_ring())?;
-
-        let succ = if let Some(succ) = ring.get_index(i + 1) {
-            Some(succ)
-        } else {
-            ring.get_index(0)
-        };
-
-        Ok(succ.map(|s| s.clone()))
     }
 
     fn is_node_present(&self, node_id: &NodeId) -> bool {

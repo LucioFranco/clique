@@ -31,7 +31,7 @@ pub struct Handle {
 
 impl<S, C, T> Cluster<S, C, T>
 where
-    S: Server<T, C>,
+    S: Server<T>,
     C: Client + Clone,
     T: Clone,
 {
@@ -57,7 +57,8 @@ where
     pub async fn start(self) -> Result<()> {
         let Cluster {
             mut membership,
-            server,
+            mut server,
+            client,
             listen_target,
             ..
         } = self;

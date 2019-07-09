@@ -8,9 +8,12 @@ authors = [
 edition = "2018"
 publish = false
 
+[workspace]
+members = ["clique-grpc"]
+
 [dependencies]
 bytes = "0.4"
-futures = { version = "=0.3.0-alpha.16", package = "futures-preview", features = ["async-await", "nightly", "io-compat", "compat"] }
+futures = { version = "=0.3.0-alpha.17", package = "futures-preview", features = ["async-await", "nightly", "io-compat", "compat"] }
 uuid = { version = "0.7", features = ["serde", "v4"] }
 serde = "1.0"
 tokio-sync = { git = "https://github.com/tokio-rs/tokio", features = ["async-traits"] }

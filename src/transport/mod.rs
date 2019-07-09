@@ -1,11 +1,9 @@
-mod proto;
+pub mod proto;
 
 use crate::Error;
 use futures::Stream;
 use std::future::Future;
 use tokio_sync::oneshot;
-
-pub use self::proto::{RequestKind, ResponseKind};
 
 pub trait Client {
     type Error: std::error::Error;
@@ -14,28 +12,49 @@ pub trait Client {
     fn call(&mut self, req: Request) -> Self::Future;
 }
 
-pub trait Server<T, C> {
+pub trait Server<T> {
     type Error: std::error::Error;
     type Stream: Stream<Item = Result<Request, Self::Error>> + Unpin;
     type Future: Future<Output = Result<Self::Stream, Self::Error>>;
 
-    fn start(&self, target: T) -> Self::Future;
+    fn start(&mut self, target: T) -> Self::Future;
 }
 
+pub trait Broadcast {
+    type Error: std::error::Error;
+    type Future: Future<Output = Vec<Result<Response, Self::Error>>>;
+
+    fn broadcast(&mut self, req: Request) -> Self::Future;
+}
+
+#[derive(Debug)]
 pub struct Request {
-    kind: RequestKind,
+    kind: proto::RequestKind,
     res_tx: oneshot::Sender<crate::Result<Response>>,
 }
 
+#[derive(Debug)]
 pub struct Response {
-    kind: ResponseKind,
+    kind: proto::ResponseKind,
 }
 
 impl Request {
+    pub fn new(res_tx: oneshot::Sender<crate::Result<Response>>, kind: proto::RequestKind) -> Self {
+        Self { res_tx, kind }
+    }
+
+    pub fn into_inner(self) -> proto::RequestKind {
+        self.kind
+    }
+
     pub fn respond(self, res: Response) -> crate::Result<()> {
         self.res_tx
             .send(Ok(res))
             // TODO: prob should be transport dropped
             .map_err(|_| Error::new_broken_pipe(None))
+    }
+
+    pub fn kind(&self) -> &proto::RequestKind {
+        &self.kind
     }
 }

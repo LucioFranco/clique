@@ -14,9 +14,11 @@ pub(crate) enum ErrorKind {
     Start,
     Join,
     BrokenPipe,
+
     UuidAlreadySeen,
     NodeAlreadyInRing,
     NodeNotInRing,
+    UnexpectedRequestType,
 }
 
 impl Error {
@@ -36,6 +38,7 @@ impl Error {
         Self::new(ErrorKind::Join, source)
     }
 
+
     pub(crate) fn new_uuid_already_seen() -> Self {
         Self::new(ErrorKind::UuidAlreadySeen, None)
     }
@@ -46,6 +49,10 @@ impl Error {
 
     pub(crate) fn new_node_not_in_ring() -> Self {
         Self::new(ErrorKind::NodeNotInRing, None)
+    }
+
+    pub(crate) fn new_unexpected_request(source: Option<Source>) -> Self {
+        Self::new(ErrorKind::UnexpectedRequestType, source)
     }
 }
 

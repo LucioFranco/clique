@@ -8,7 +8,7 @@ publish = false
 [dependencies]
 clique = { path = ".." }
 bytes = "0.4"
-futures03 = { version = "=0.3.0-alpha.16", package = "futures-preview", features = ["async-await", "nightly", "io-compat", "compat"] }
+futures03 = { version = "=0.3.0-alpha.17", package = "futures-preview", features = ["async-await", "nightly", "io-compat", "compat"] }
 futures = { version = "0.1", package = "futures" } 
 tower-grpc = { version = "0.1", features = ["tower-hyper"] }
 tower-hyper = "0.1"

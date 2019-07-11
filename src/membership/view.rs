@@ -120,6 +120,8 @@ mod tests {
     use crate::common::NodeId;
     use crate::error::ErrorKind;
 
+    const K: i32 = 10;
+
     #[test]
     fn ring_add() {
         let mut view = View::new(5);
@@ -158,7 +160,7 @@ mod tests {
 
     #[test]
     fn observers_one_node() {
-        let mut view = View::new(3);
+        let mut view = View::new(K);
 
         view.ring_add("A".into(), NodeId::new()).unwrap();
 
@@ -167,26 +169,52 @@ mod tests {
     }
 
     #[test]
-    fn observers_4_nodes() {
-        let mut view = View::new(3);
+    fn observers_two_nodes() {
+        let mut view = View::new(K);
+
+        view.ring_add("A".into(), NodeId::new()).unwrap();
+        view.ring_add("B".into(), NodeId::new()).unwrap();
+
+        let obs = view.get_observers(&"A".to_string()).unwrap();
+        assert_eq!(obs.len(), K as usize);
+    }
+
+    #[test]
+    fn observers_three_nodes() {
+        let mut view = View::new(K);
 
         view.ring_add("A".into(), NodeId::new()).unwrap();
         view.ring_add("B".into(), NodeId::new()).unwrap();
         view.ring_add("C".into(), NodeId::new()).unwrap();
-        view.ring_add("D".into(), NodeId::new()).unwrap();
 
-        let obs = view.get_observers(&"A".to_string()).unwrap();
-        assert_eq!(obs, vec!["C".to_string(), "D".to_string(), "B".to_string()]);
+        for node in vec!["A", "B", "C"] {
+            let mut obs = view.get_observers(&node.to_string()).unwrap();
+            assert_eq!(obs.len(), K as usize);
+            obs.sort();
+            obs.dedup();
+            assert_eq!(obs.len(), 2);
+        }
 
-        let obs = view.get_observers(&"B".to_string()).unwrap();
-        assert_eq!(obs, vec!["D".to_string(), "A".to_string(), "C".to_string()]);
+        // TODO: test delete as well
+    }
 
-        let obs = view.get_observers(&"C".to_string()).unwrap();
-        // TODO: this seems wrong?
-        assert_eq!(obs, vec!["B".to_string(), "B".to_string(), "D".to_string()]);
+    #[test]
+    fn observers_multiple_nodes() {
+        let num = 1000;
 
-        let obs = view.get_observers(&"D".to_string()).unwrap();
-        // TODO: here too duplicates?
-        assert_eq!(obs, vec!["A".to_string(), "C".to_string(), "A".to_string()]);
+        let nodes = (0..num)
+            .into_iter()
+            .map(|i| i.to_string())
+            .collect::<Vec<_>>();
+
+        let mut view = View::new(K);
+        for node in &nodes {
+            view.ring_add(node.clone(), NodeId::new()).unwrap();
+        }
+
+        for node in &nodes {
+            let mut obs = view.get_observers(&node.to_string()).unwrap();
+            assert_eq!(obs.len(), K as usize);
+        }
     }
 }

@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, collections::BTreeSet, hash::Hasher};
+use std::{cmp::Ordering, collections::BTreeSet, hash::Hasher, ops::Bound};
 use twox_hash::XxHash64;
 
 #[derive(Debug, Clone)]
@@ -45,8 +45,14 @@ impl<T: AsRef<[u8]>> Ring<T> {
         self.set.remove(&seeded_key)
     }
 
-    pub fn get_successor(&self, key: T) -> Option<T> {
-        unimplemented!()
+    pub fn higher(&self, key: T) -> Option<&T> {
+        let seeded_key = SeededKey::new(key, self.seed);
+        let range = (Bound::Excluded(seeded_key), Bound::Unbounded);
+        self.set.range(range).next().map(|v| &v.key)
+    }
+
+    pub fn first(&self) -> Option<&T> {
+        self.set.iter().next().map(|v| &v.key)
     }
 
     pub fn len(&self) -> usize {

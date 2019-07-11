@@ -77,16 +77,23 @@ impl View {
     }
 
     pub fn get_observers(&self, node: &Endpoint) -> Result<Vec<Endpoint>> {
+        if !self.rings[0].contains(node.clone()) {
+            return Err(Error::new_node_not_in_ring());
+        }
+
+        if self.rings[0].len() <= 1 {
+            return Ok(Vec::new());
+        }
+
         let mut observers = Vec::new();
 
         for ring in &self.rings {
-            let successor = if let Some(s) = ring.get_successor(node.clone()) {
-                s
+            if let Some(successor) = ring.higher(node.clone()) {
+                observers.push(successor.clone());
             } else {
-                return Ok(Vec::new());
-            };
-
-            observers.push(successor);
+                let first = ring.first().unwrap();
+                observers.push(first.clone());
+            }
         }
 
         Ok(observers)
@@ -150,21 +157,36 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
-    fn observers() {
+    fn observers_one_node() {
         let mut view = View::new(3);
 
         view.ring_add("A".into(), NodeId::new()).unwrap();
 
-        // view.ring_add("C".into(), NodeId::new()).unwrap();
-        // view.ring_add("D".into(), NodeId::new()).unwrap();
-        // view.ring_add("E".into(), NodeId::new()).unwrap();
+        let obs = view.get_observers(&"A".to_string()).unwrap();
+        assert!(obs.is_empty());
+    }
 
-        assert_eq!(view.get_observers(&"A".to_string()).unwrap().len(), 0);
+    #[test]
+    fn observers_4_nodes() {
+        let mut view = View::new(3);
 
+        view.ring_add("A".into(), NodeId::new()).unwrap();
         view.ring_add("B".into(), NodeId::new()).unwrap();
+        view.ring_add("C".into(), NodeId::new()).unwrap();
+        view.ring_add("D".into(), NodeId::new()).unwrap();
 
         let obs = view.get_observers(&"A".to_string()).unwrap();
-        assert_eq!(obs, vec!["B".to_string()]);
+        assert_eq!(obs, vec!["C".to_string(), "D".to_string(), "B".to_string()]);
+
+        let obs = view.get_observers(&"B".to_string()).unwrap();
+        assert_eq!(obs, vec!["D".to_string(), "A".to_string(), "C".to_string()]);
+
+        let obs = view.get_observers(&"C".to_string()).unwrap();
+        // TODO: this seems wrong?
+        assert_eq!(obs, vec!["B".to_string(), "B".to_string(), "D".to_string()]);
+
+        let obs = view.get_observers(&"D".to_string()).unwrap();
+        // TODO: here too duplicates?
+        assert_eq!(obs, vec!["A".to_string(), "C".to_string(), "A".to_string()]);
     }
 }

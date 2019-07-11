@@ -38,7 +38,6 @@ impl Error {
         Self::new(ErrorKind::Join, source)
     }
 
-
     pub(crate) fn new_uuid_already_seen() -> Self {
         Self::new(ErrorKind::UuidAlreadySeen, None)
     }

@@ -1,6 +1,6 @@
 use crate::{
-    error::{Error, Result},
     common::Endpoint,
+    error::{Error, Result},
     transport::{Client, Request, Response},
 };
 

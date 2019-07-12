@@ -1,6 +1,7 @@
 use crate::{
+    common::Endpoint,
     error::{Error, Result},
-    transport::{proto::Endpoint, Client, Request, Response},
+    transport::{Client, Request, Response},
 };
 
 pub struct Paxos<'a, C> {

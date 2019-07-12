@@ -6,6 +6,7 @@
 //! Clique membership library.
 
 pub mod cluster;
+mod common;
 mod error;
 pub mod transport;
 

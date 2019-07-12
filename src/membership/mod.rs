@@ -1,3 +1,4 @@
+mod ring;
 mod view;
 
 use crate::transport::Request;
@@ -17,7 +18,7 @@ impl Membership {
         self.view.clone()
     }
 
-    pub async fn handle_message(&mut self, req: Request) {
+    pub async fn handle_message(&mut self, _req: Request) {
         unimplemented!()
     }
 

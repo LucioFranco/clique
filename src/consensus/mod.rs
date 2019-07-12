@@ -5,11 +5,9 @@ mod paxos;
 use paxos::Paxos;
 
 use crate::{
+    common::Endpoint,
     error::{Error, Result},
-    transport::{
-        proto::{self, Endpoint},
-        Broadcast, Client, Request, Response,
-    },
+    transport::{proto, Broadcast, Client, Request, Response},
 };
 
 pub struct FastPaxos<'a, C, B> {

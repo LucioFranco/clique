@@ -51,8 +51,22 @@ impl<T: AsRef<[u8]>> Ring<T> {
         self.set.range(range).next().map(|v| &v.key)
     }
 
+    pub fn lower(&self, key: T) -> Option<&T> {
+        let seeded_key = SeededKey::new(key, self.seed);
+        let range = (Bound::Unbounded, Bound::Excluded(seeded_key));
+        self.set.range(range).next().map(|v| &v.key)
+    }
+
     pub fn first(&self) -> Option<&T> {
         self.set.iter().next().map(|v| &v.key)
+    }
+
+    pub fn last(&self) -> Option<&T> {
+        self.set.iter().next_back().map(|v| &v.key)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     pub fn len(&self) -> usize {

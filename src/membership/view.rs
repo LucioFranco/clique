@@ -99,8 +99,44 @@ impl View {
         Ok(observers)
     }
 
+    pub fn get_subjects(&self, node: &Endpoint) -> Result<Vec<Endpoint>> {
+        if !self.rings[0].contains(node.clone()) {
+            return Err(Error::new_node_not_in_ring());
+        }
+
+        if self.rings[0].len() <= 1 {
+            return Ok(Vec::new());
+        }
+
+        let predecessors = self.get_predecessors(node);
+        Ok(predecessors)
+    }
+
+    pub fn get_expected_observers(&self, node: &Endpoint) -> Result<Vec<Endpoint>> {
+        Ok(self.get_predecessors(node))
+    }
+
     pub fn get_ring(&self, k: i32) -> Option<&Ring> {
         self.rings.get(k as usize)
+    }
+
+    fn get_predecessors(&self, node: &Endpoint) -> Vec<Endpoint> {
+        if self.rings[0].is_empty() {
+            return Vec::new();
+        }
+
+        let mut predecessors = Vec::new();
+
+        for ring in &self.rings {
+            if let Some(predecessor) = ring.lower(node.clone()) {
+                predecessors.push(predecessor.clone());
+            } else {
+                let last = ring.last().unwrap();
+                predecessors.push(last.clone());
+            }
+        }
+
+        predecessors
     }
 
     fn is_node_present(&self, node_id: &NodeId) -> bool {
@@ -159,28 +195,32 @@ mod tests {
     }
 
     #[test]
-    fn observers_one_node() {
+    fn monitor_edge_one_node() {
         let mut view = View::new(K);
 
         view.ring_add("A".into(), NodeId::new()).unwrap();
 
         let obs = view.get_observers(&"A".to_string()).unwrap();
+        let sub = view.get_subjects(&"A".to_string()).unwrap();
         assert!(obs.is_empty());
+        assert!(sub.is_empty());
     }
 
     #[test]
-    fn observers_two_nodes() {
+    fn monitor_edge_two_nodes() {
         let mut view = View::new(K);
 
         view.ring_add("A".into(), NodeId::new()).unwrap();
         view.ring_add("B".into(), NodeId::new()).unwrap();
 
         let obs = view.get_observers(&"A".to_string()).unwrap();
+        let sub = view.get_subjects(&"A".to_string()).unwrap();
         assert_eq!(obs.len(), K as usize);
+        assert_eq!(sub.len(), K as usize);
     }
 
     #[test]
-    fn observers_three_nodes() {
+    fn monitor_edge_three_nodes() {
         let mut view = View::new(K);
 
         view.ring_add("A".into(), NodeId::new()).unwrap();
@@ -193,13 +233,31 @@ mod tests {
             obs.sort();
             obs.dedup();
             assert_eq!(obs.len(), 2);
+
+            let mut sub = view.get_subjects(&node.to_string()).unwrap();
+            assert_eq!(sub.len(), K as usize);
+            sub.sort();
+            sub.dedup();
+            assert_eq!(sub.len(), 2);
         }
 
-        // TODO: test delete as well
+        view.ring_delete(&"B".into()).unwrap();
+
+        let mut obs = view.get_observers(&"A".to_string()).unwrap();
+        assert_eq!(obs.len(), K as usize);
+        obs.sort();
+        obs.dedup();
+        assert_eq!(obs.len(), 1);
+
+        let mut sub = view.get_subjects(&"A".to_string()).unwrap();
+        assert_eq!(sub.len(), K as usize);
+        sub.sort();
+        sub.dedup();
+        assert_eq!(sub.len(), 1);
     }
 
     #[test]
-    fn observers_multiple_nodes() {
+    fn monitor_edge_multiple_nodes() {
         let num = 1000;
 
         let nodes = (0..num)
@@ -213,8 +271,25 @@ mod tests {
         }
 
         for node in &nodes {
-            let mut obs = view.get_observers(&node.to_string()).unwrap();
+            let obs = view.get_observers(&node.to_string()).unwrap();
             assert_eq!(obs.len(), K as usize);
+            let sub = view.get_subjects(&node.to_string()).unwrap();
+            assert_eq!(sub.len(), K as usize);
         }
+    }
+
+    #[test]
+    fn monitor_edge_bootstrap() {
+        let mut view = View::new(K);
+
+        view.ring_add("A".into(), NodeId::new()).unwrap();
+
+        let exp_obs = view.get_expected_observers(&"".to_string()).unwrap();
+        assert_eq!(exp_obs.len(), K as usize);
+        let mut exp_obs_dedup = exp_obs.clone();
+        exp_obs_dedup.sort();
+        exp_obs_dedup.dedup();
+        assert_eq!(exp_obs_dedup.len(), 1);
+        assert_eq!(exp_obs[0], "A".to_string());
     }
 }

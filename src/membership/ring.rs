@@ -1,4 +1,9 @@
-use std::{cmp::Ordering, collections::BTreeSet, hash::Hasher, ops::Bound};
+use std::{
+    cmp::Ordering,
+    collections::{btree_set, BTreeSet},
+    hash::Hasher,
+    ops::Bound,
+};
 use twox_hash::XxHash64;
 
 /// A tree that sorts based on a seeded hash value.
@@ -98,6 +103,42 @@ impl<T: AsRef<[u8]>> Ring<T> {
     /// Returns the amount of values in the ring.
     pub fn len(&self) -> usize {
         self.set.len()
+    }
+
+    pub fn iter(&self) -> Iter<T> {
+        Iter {
+            iter: self.set.iter(),
+        }
+    }
+
+    pub fn into_iter(self) -> IntoIter<T> {
+        IntoIter {
+            iter: self.set.into_iter(),
+        }
+    }
+}
+
+pub struct Iter<'a, T> {
+    iter: btree_set::Iter<'a, SeededKey<T>>,
+}
+
+impl<'a, T> Iterator for Iter<'a, T> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next().map(|v| &v.key)
+    }
+}
+
+pub struct IntoIter<T> {
+    iter: btree_set::IntoIter<SeededKey<T>>,
+}
+
+impl<T> Iterator for IntoIter<T> {
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next().map(|v| v.key)
     }
 }
 

@@ -60,19 +60,19 @@ impl<'a, C> Paxos<'a, C> {
         unimplemented!()
     }
 
-    pub(crate) async fn handle_phase_1a(&self, request: Request) -> crate::Result<Response> {
+    pub(crate) async fn handle_phase_1a(&self, _request: Request) -> crate::Result<Response> {
         unimplemented!()
     }
 
-    pub(crate) async fn handle_phase_1b(&self, request: Request) -> crate::Result<Response> {
+    pub(crate) async fn handle_phase_1b(&self, _request: Request) -> crate::Result<Response> {
         unimplemented!()
     }
 
-    pub(crate) async fn handle_phase_2a(&self, request: Request) -> crate::Result<Response> {
+    pub(crate) async fn handle_phase_2a(&self, _request: Request) -> crate::Result<Response> {
         unimplemented!()
     }
 
-    pub(crate) async fn handle_phase_2b(&self, request: Request) -> crate::Result<Response> {
+    pub(crate) async fn handle_phase_2b(&self, _request: Request) -> crate::Result<Response> {
         unimplemented!()
     }
 }

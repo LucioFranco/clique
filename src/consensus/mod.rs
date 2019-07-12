@@ -4,7 +4,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use futures::{stream::FuturesUnordered, Future, FutureExt, Stream, StreamExt};
+use futures::FutureExt;
 use rand::Rng;
 use tokio_sync::oneshot;
 use tokio_timer::Delay;
@@ -17,8 +17,8 @@ use crate::{
     common::{ConfigId, Endpoint},
     error::{Error, Result},
     transport::{
-        proto::{self, Phase2bMessage},
-        Broadcast, Client, Request, Response,
+        proto::{self},
+        Broadcast, Client, Request,
     },
 };
 
@@ -74,7 +74,7 @@ where
     ///
     /// Returns `NewBrokenPipe` if the broadcast was not sucessful
     pub async fn propose(&mut self, proposal: Vec<Endpoint>) -> Result<()> {
-        let mut paxos_delay = Delay::new(Instant::now() + self.get_random_delay()).fuse();
+        let paxos_delay = Delay::new(Instant::now() + self.get_random_delay()).fuse();
 
         async {
             paxos_delay.await;
@@ -135,7 +135,7 @@ where
             return Err(Error::vote_already_received());
         }
 
-        if (self.decided.load(Ordering::SeqCst)) {
+        if self.decided.load(Ordering::SeqCst) {
             return Err(Error::already_reached_consensus());
         }
 
@@ -149,8 +149,8 @@ where
 
         let F = ((self.size - 1) as f64 / 4f64).floor();
 
-        if (self.votes_received.len() >= (self.size as f64 - F) as usize) {
-            if (*count >= (self.size as f64 - F) as usize) {
+        if self.votes_received.len() >= (self.size as f64 - F) as usize {
+            if *count >= (self.size as f64 - F) as usize {
                 return self.on_decide(request.endpoints.clone());
             }
         }

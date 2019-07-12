@@ -2,7 +2,7 @@ use std::{error, fmt};
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-type Source = Box<dyn error::Error + Send + Sync + 'static>;
+type Source = Box<dyn error::Error + Send + Sync>;
 
 pub struct Error {
     kind: ErrorKind,
@@ -19,6 +19,10 @@ pub(crate) enum ErrorKind {
     NodeAlreadyInRing,
     NodeNotInRing,
     UnexpectedRequestType,
+
+    VoteAlreadyReceived,
+    AlreadyReachedconsensus,
+    FastRoundFailure,
 }
 
 impl Error {
@@ -48,6 +52,18 @@ impl Error {
 
     pub(crate) fn new_node_not_in_ring() -> Self {
         Self::new(ErrorKind::NodeNotInRing, None)
+    }
+
+    pub(crate) fn vote_already_received() -> Self {
+        Self::new(ErrorKind::VoteAlreadyReceived, None)
+    }
+
+    pub(crate) fn already_reached_consensus() -> Self {
+        Self::new(ErrorKind::AlreadyReachedconsensus, None)
+    }
+
+    pub(crate) fn fast_round_failure() -> Self {
+        Self::new(ErrorKind::FastRoundFailure, None)
     }
 
     pub(crate) fn new_unexpected_request(source: Option<Source>) -> Self {

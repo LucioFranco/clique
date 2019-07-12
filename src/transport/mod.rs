@@ -1,6 +1,9 @@
 pub mod proto;
 
-use crate::Error;
+use crate::{
+    common::{ConfigId, Endpoint},
+    Error,
+};
 use futures::Stream;
 use std::future::Future;
 use tokio_sync::oneshot;
@@ -56,5 +59,21 @@ impl Request {
 
     pub fn kind(&self) -> &proto::RequestKind {
         &self.kind
+    }
+
+    pub fn new_fast_round(
+        res_tx: oneshot::Sender<crate::Result<Response>>,
+        sender: Endpoint,
+        config_id: ConfigId,
+        endpoints: Vec<Endpoint>,
+    ) -> Self {
+        let kind = proto::RequestKind::Consensus(proto::Consensus::FastRoundPhase2bMessage(
+            proto::FastRoundPhase2bMessage {
+                sender: sender,
+                config_id: config_id,
+                endpoints: endpoints,
+            },
+        ));
+        Self { res_tx, kind }
     }
 }

@@ -27,10 +27,10 @@ const BASE_DELAY: u64 = 1000;
 /// Represents an instance of the Fast Paxos consensus protocol.
 ///
 /// This protocol has a fast path as compared to paxos, when a majority set agrees on the same
-/// membershipset, each node individually accepts the value without the involvement of a leadero
-/// r/coordinator.
+/// membershipset, each node individually accepts the value without the involvement of a
+/// leader/coordinator.
 ///
-/// If a qorum is not forumed, then it falls back to an instance of regular Paxos, which is
+/// If a quorum is not formed, then it falls back to an instance of regular Paxos, which is
 /// scheduled to be run after a random interval of time. The randomness is introduced so that
 /// multiple nodes do not start their own instances of paxos as coordinators.
 pub struct FastPaxos<'a, C, B> {
@@ -123,9 +123,9 @@ where
         }
     }
 
-    async fn handle_fast_round<'b>(
-        &'b mut self,
-        request: &'b proto::FastRoundPhase2bMessage,
+    async fn handle_fast_round(
+        &mut self,
+        request: &proto::FastRoundPhase2bMessage,
     ) -> crate::Result<Vec<Endpoint>> {
         if request.config_id != self.config_id {
             return Err(Error::new_unexpected_request(None));

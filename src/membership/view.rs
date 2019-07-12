@@ -6,6 +6,17 @@ use std::collections::HashSet;
 
 type Ring = crate::membership::ring::Ring<Endpoint>;
 
+/// Represents the current view of membership.
+///
+/// The `View` is responsible for representing each view of the current membership. It
+/// contains an edge expander graph approximation that allows for a strongly connected toplogy of groups
+/// of observers and subjects.
+///
+/// The to topology is setup of `K` rings each with unique seed values. This provides `K` different
+/// pseudo ordered rings. A node has one observer and one subject in each ring. Thus the set of
+/// observers and subjects is the successor and precessor in each ring.
+///
+/// TODO: talk about what observers, subjects and the `K` value.
 #[derive(Debug, Clone)]
 pub struct View {
     k: i32,
@@ -23,6 +34,7 @@ struct Configuration {
 }
 
 impl View {
+    /// Create a new `View` with value `K`.
     pub fn new(k: i32) -> Self {
         assert!(k > 0);
 
@@ -42,6 +54,12 @@ impl View {
         }
     }
 
+    /// Add a node to the ring.
+    ///
+    /// # Errors
+    ///
+    /// Returns `UuidAlreadySeen` if the `NodeId` has already been seen and returns
+    /// `NodeAlreadyInRing` if the node being added already exists.
     pub fn ring_add(&mut self, node: Endpoint, node_id: NodeId) -> Result<()> {
         if self.is_node_present(&node_id) {
             return Err(Error::new_uuid_already_seen());
@@ -62,6 +80,11 @@ impl View {
         Ok(())
     }
 
+    /// Delete a node from the view.
+    ///
+    /// # Errors
+    ///
+    /// Returns `NodeNotInRing` if the node doesn't exist in the view already.
     pub fn ring_delete(&mut self, node: &Endpoint) -> Result<()> {
         if !self.rings[0].contains(node.clone()) {
             return Err(Error::new_node_not_in_ring());
@@ -76,6 +99,11 @@ impl View {
         Ok(())
     }
 
+    /// Get a list of size `K` observers for the provided node.
+    ///
+    /// # Errors
+    ///
+    /// Returns `NodeNotInRing` if the provided node doesn't exist already.
     pub fn get_observers(&self, node: &Endpoint) -> Result<Vec<Endpoint>> {
         if !self.rings[0].contains(node.clone()) {
             return Err(Error::new_node_not_in_ring());
@@ -99,6 +127,11 @@ impl View {
         Ok(observers)
     }
 
+    /// Get a list of size `K` subjects for the provided node.
+    ///
+    /// # Errors
+    ///
+    /// Returns `NodeNotInRing` if the provided node doesn't exist already.
     pub fn get_subjects(&self, node: &Endpoint) -> Result<Vec<Endpoint>> {
         if !self.rings[0].contains(node.clone()) {
             return Err(Error::new_node_not_in_ring());
@@ -112,10 +145,12 @@ impl View {
         Ok(predecessors)
     }
 
-    pub fn get_expected_observers(&self, node: &Endpoint) -> Result<Vec<Endpoint>> {
-        Ok(self.get_predecessors(node))
+    /// Get the observers that the node would have if it were in the view already.
+    pub fn get_expected_observers(&self, node: &Endpoint) -> Vec<Endpoint> {
+        self.get_predecessors(node)
     }
 
+    /// Get the `K`th ring.
     pub fn get_ring(&self, k: i32) -> Option<&Ring> {
         self.rings.get(k as usize)
     }
@@ -284,7 +319,7 @@ mod tests {
 
         view.ring_add("A".into(), NodeId::new()).unwrap();
 
-        let exp_obs = view.get_expected_observers(&"".to_string()).unwrap();
+        let exp_obs = view.get_expected_observers(&"".to_string());
         assert_eq!(exp_obs.len(), K as usize);
         let mut exp_obs_dedup = exp_obs.clone();
         exp_obs_dedup.sort();

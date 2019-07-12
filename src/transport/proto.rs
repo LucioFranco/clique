@@ -106,18 +106,6 @@ pub struct Metadata {
     pub metadata: HashMap<String, Bytes>,
 }
 
-impl NodeId {
-    pub fn new() -> Self {
-        NodeId(Uuid::new_v4())
-    }
-}
-
-impl From<Uuid> for NodeId {
-    fn from(t: Uuid) -> Self {
-        NodeId(t)
-    }
-}
-
 #[derive(Debug)]
 pub struct Rank {
     pub round: u32,

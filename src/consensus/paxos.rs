@@ -1,7 +1,8 @@
 use crate::{
+    common::{ConfigId, Endpoint},
     error::Result,
     transport::{
-        proto::{ConfigId, Endpoint, Phase1bMessage, Phase2aMessage, Rank},
+        proto::{Phase1bMessage, Phase2aMessage, Rank},
         Client, Request, Response,
     },
 };

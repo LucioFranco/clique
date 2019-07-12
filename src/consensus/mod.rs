@@ -14,10 +14,10 @@ mod paxos;
 use paxos::Paxos;
 
 use crate::{
-    common::Endpoint,
+    common::{ConfigId, Endpoint},
     error::{Error, Result},
     transport::{
-        proto::{self, ConfigId, Endpoint, Phase2bMessage},
+        proto::{self, Phase2bMessage},
         Broadcast, Client, Request, Response,
     },
 };

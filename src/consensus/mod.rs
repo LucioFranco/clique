@@ -1,6 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
-    sync::atomic::{AtomicBool, AtomicUsize, Ordering},
+    sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant},
 };
 
@@ -24,23 +24,24 @@ use crate::{
 
 const BASE_DELAY: u64 = 1000;
 
-#[derive(Debug)]
-enum CancelPaxos {}
-
+/// Represents an instance of the Fast Paxos consensus protocol.
+///
+/// This protocol has a fast path as compared to paxos, when a majority set agrees on the same
+/// membershipset, each node individually accepts the value without the involvement of a leadero
+/// r/coordinator.
+///
+/// If a qorum is not forumed, then it falls back to an instance of regular Paxos, which is
+/// scheduled to be run after a random interval of time. The randomness is introduced so that
+/// multiple nodes do not start their own instances of paxos as coordinators.
 pub struct FastPaxos<'a, C, B> {
     broadcast: &'a mut B,
     my_addr: Endpoint,
     size: usize,
     decided: AtomicBool,
-    /// Channel used to communicate with upstream about decision
-    decision_tx: oneshot::Sender<Vec<Endpoint>>,
-    /// Channel the paxos instance will use to communicate with us about decision
-    // paxos_rx: oneshot::Receiver<Vec<Endpoint>>,
     paxos: Option<Paxos<'a, C>>,
-    /// Latest configuration we accepted.
     config_id: ConfigId,
     votes_received: HashSet<Endpoint>, // should be a bitset?
-    votes_per_proposal: HashMap<Vec<Endpoint>, AtomicUsize>,
+    votes_per_proposal: HashMap<Vec<Endpoint>, usize>,
 }
 
 impl<'a, C, B> FastPaxos<'a, C, B>
@@ -53,13 +54,10 @@ where
         size: usize,
         client: &'a mut C,
         broadcast: &'a mut B,
-        decision_tx: oneshot::Sender<Vec<Endpoint>>,
-        proposal_rx: oneshot::Receiver<Vec<Endpoint>>,
         config_id: ConfigId,
     ) -> FastPaxos<'a, C, B> {
         FastPaxos {
             broadcast,
-            decision_tx,
             config_id,
             size: size,
             my_addr: my_addr.clone(),
@@ -70,6 +68,11 @@ where
         }
     }
 
+    /// Propose a new membership set to the cluster
+    ///
+    /// # Errors
+    ///
+    /// Returns `NewBrokenPipe` if the broadcast was not sucessful
     pub async fn propose(&mut self, proposal: Vec<Endpoint>) -> Result<()> {
         let mut paxos_delay = Delay::new(Instant::now() + self.get_random_delay()).fuse();
 
@@ -81,23 +84,26 @@ where
 
         let (tx, rx) = oneshot::channel();
 
-        let kind = proto::RequestKind::Consensus(proto::Consensus::FastRoundPhase2bMessage(
-            proto::FastRoundPhase2bMessage {
-                sender: self.my_addr.clone(),
-                config_id: self.config_id,
-                endpoints: proposal,
-            },
-        ));
+        let request = Request::new_fast_round(tx, self.my_addr.clone(), self.config_id, proposal);
 
-        let request = Request::new(tx, kind);
-
+        // TODO: Handle Vec<Result<Response>>
         self.broadcast.broadcast(request).await;
-        rx.await;
+        rx.await.map_err(|_| Error::new_broken_pipe(None))?;
 
-        // TODO: better error type
         Ok(())
     }
 
+    /// Handles a consensus message which the membership service reveives.
+    ///
+    /// # Errors
+    ///
+    /// * `NewUnexpectedRequest`: if any other request kind other tha a Consensus message is
+    /// passed.
+    /// * `VoteAlredyReceived`: If the request is from a sender who has already cast a vote which
+    /// this node as received.
+    /// * `AlreadyReachedConsensus`: If this is called after the cluster has already reached
+    /// consensus.
+    /// * `FastRoundFailure`: If fast paxos is unable to reach consensus
     pub async fn handle_message(&mut self, request: Request) -> Result<Vec<Endpoint>> {
         match request.kind() {
             proto::RequestKind::Consensus(req_type) => {
@@ -126,11 +132,11 @@ where
         }
 
         if self.votes_received.contains(&request.sender) {
-            return Err(Error::new_unexpected_request(None));
+            return Err(Error::vote_already_received());
         }
 
         if (self.decided.load(Ordering::SeqCst)) {
-            return Err(Error::new_unexpected_request(None));
+            return Err(Error::already_reached_consensus());
         }
 
         self.votes_received.insert(request.sender.clone());
@@ -138,24 +144,21 @@ where
         let count = self
             .votes_per_proposal
             .entry(request.endpoints.clone())
-            .and_modify(|votes| {
-                votes.fetch_add(1, Ordering::SeqCst);
-            })
-            .or_insert(AtomicUsize::new(0));
+            .and_modify(|votes| *votes += 1)
+            .or_insert(0);
 
         let F = ((self.size - 1) as f64 / 4f64).floor();
 
         if (self.votes_received.len() >= (self.size as f64 - F) as usize) {
-            if (count.load(Ordering::SeqCst) >= (self.size as f64 - F) as usize) {
-                return self.on_decide(request.endpoints.clone()).await;
+            if (*count >= (self.size as f64 - F) as usize) {
+                return self.on_decide(request.endpoints.clone());
             }
         }
 
-        // TODO: do we need new error type here?
-        Err(Error::new_unexpected_request(None))
+        Err(Error::fast_round_failure())
     }
 
-    async fn on_decide(&mut self, hosts: Vec<Endpoint>) -> Result<Vec<Endpoint>> {
+    fn on_decide(&mut self, hosts: Vec<Endpoint>) -> Result<Vec<Endpoint>> {
         // This is the only place where the value is set to `true`.
         self.decided.store(true, Ordering::SeqCst);
 
@@ -171,7 +174,7 @@ where
     async fn start_classic_round(&mut self) -> Result<()> {
         if !self.decided.load(Ordering::SeqCst) {
             if let Some(paxos) = &mut self.paxos {
-                paxos.start_round().await;
+                paxos.start_round().await?;
             }
         }
         Ok(())

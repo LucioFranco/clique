@@ -106,7 +106,7 @@ pub struct Metadata {
     pub metadata: HashMap<String, Bytes>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy)]
 pub struct Rank {
     pub round: u32,
     pub node_index: u32,

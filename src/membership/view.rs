@@ -74,6 +74,7 @@ impl View {
 
     /// Checks if a node with the accompanying `NodeId` is safe to add to the network.
     pub fn is_safe_to_join(&self, node: &Endpoint, node_id: &NodeId) -> JoinStatus {
+        // TODO: what if host is not in the ring?
         if self.rings[0].contains(node.clone()) {
             JoinStatus::HostnameAlreadyInRing
         } else if self.seen.contains(node_id) {
@@ -90,7 +91,7 @@ impl View {
     /// Returns `UuidAlreadySeen` if the `NodeId` has already been seen and returns
     /// `NodeAlreadyInRing` if the node being added already exists.
     pub fn ring_add(&mut self, node: Endpoint, node_id: NodeId) -> Result<()> {
-        if self.is_node_present(&node_id) {
+        if self.is_node_id_present(&node_id) {
             return Err(Error::new_uuid_already_seen());
         }
 
@@ -199,6 +200,21 @@ impl View {
         &mut self.current_config
     }
 
+    /// Get the current size of the membership.
+    pub fn get_membership_size(&self) -> usize {
+        self.rings[0].len()
+    }
+
+    /// Check if the node id has been seen.
+    pub fn is_node_id_present(&self, node_id: &NodeId) -> bool {
+        self.seen.contains(node_id)
+    }
+
+    /// Check if the node is present.
+    pub fn is_host_present(&self, node: &Endpoint) -> bool {
+        self.rings[0].contains(node.clone())
+    }
+
     fn get_predecessors(&self, node: &Endpoint) -> Vec<Endpoint> {
         if self.rings[0].is_empty() {
             return Vec::new();
@@ -216,10 +232,6 @@ impl View {
         }
 
         predecessors
-    }
-
-    fn is_node_present(&self, node_id: &NodeId) -> bool {
-        self.seen.contains(node_id)
     }
 }
 

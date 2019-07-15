@@ -10,7 +10,7 @@ use tokio_sync::oneshot;
 
 pub trait Client {
     type Error: std::error::Error;
-    type Future: Future<Output = Result<Response, Self::Error>>;
+    type Future: Future<Output = Result<Response, Self::Error>> + Send;
 
     fn call(&mut self, req: Request) -> Self::Future;
 }
@@ -61,6 +61,10 @@ impl Request {
         &self.kind
     }
 
+    pub fn into_parts(self) -> (proto::RequestKind, oneshot::Sender<crate::Result<Response>>) {
+        (self.kind, self.res_tx)
+    }
+
     pub fn new_fast_round(
         res_tx: oneshot::Sender<crate::Result<Response>>,
         sender: Endpoint,
@@ -75,5 +79,16 @@ impl Request {
             },
         ));
         Self { res_tx, kind }
+    }
+}
+
+impl Response {
+    pub fn new(kind: proto::ResponseKind) -> Self {
+        Self { kind }
+    }
+
+    pub fn new_join(join: proto::JoinResponse) -> Self {
+        let kind = proto::ResponseKind::Join(join);
+        Self::new(kind)
     }
 }

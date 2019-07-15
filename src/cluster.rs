@@ -1,7 +1,7 @@
 use crate::{
     error::{Error, Result},
     membership::Membership,
-    transport::{Client, Server},
+    transport::{Client, Request, Response, Server},
 };
 use futures::{Stream, StreamExt};
 use std::{
@@ -9,7 +9,7 @@ use std::{
     task::{Context, Poll},
     time::{Duration, Instant},
 };
-use tokio_sync::watch;
+use tokio_sync::{mpsc, oneshot, watch};
 use tokio_timer::Interval;
 
 #[derive(Debug, Default, Clone)]
@@ -32,7 +32,7 @@ pub struct Handle {
 impl<S, C, T> Cluster<S, C, T>
 where
     S: Server<T>,
-    C: Client + Clone,
+    C: Client + Send + Clone,
     T: Clone,
 {
     pub fn new(server: S, client: C, listen_target: T) -> Self {
@@ -54,32 +54,54 @@ where
         self.handle.clone()
     }
 
-    pub async fn start(self) -> Result<()> {
-        let Cluster {
-            mut membership,
-            mut server,
-            client,
-            listen_target,
-            ..
-        } = self;
+    pub async fn start(&mut self) -> Result<()> {
+        let mut server = self
+            .server
+            .start(self.listen_target.clone())
+            .await
+            .unwrap()
+            .fuse();
 
-        let mut server = server.start(listen_target).await.unwrap().fuse();
         let mut edge_detector_ticker = Interval::new(Instant::now(), Duration::from_secs(1)).fuse();
+        let mut monitor = crate::monitor::Monitor::new();
+        // let mut batch_alert_
+
+        let mut monitor_jobs = crate::common::Scheduler::new();
+
+        let (client_tx, mut client_rx) = mpsc::channel(1000);
+        let mut client_rx = client_rx.fuse();
+
+        self.membership
+            .create_failure_detectors(&mut monitor_jobs, client_tx.clone());
 
         loop {
             futures::select! {
                 request = server.next() => {
                     if let Some(Ok(request)) = request {
-                        membership.handle_message(request).await;
+                        self.membership.handle_message(request).await;
                     } else {
                         return Err(Error::new_join(None))
                     }
                 },
+                item = client_rx.next() => {
+                    match item {
+                        Some((req, tx)) => self.handle_client_request(req, tx).await,
+                        None => eprintln!("Client stream closed")
+                    }
+
+                }
+                res = monitor_jobs.next() => {
+                },
                 _ = edge_detector_ticker.next() => {
-                    membership.tick().await;
+                    self.membership.tick().await;
                 }
             };
         }
+    }
+
+    async fn handle_client_request(&mut self, request: Request, tx: oneshot::Sender<Response>) {
+        let response = self.client.call(request).await.unwrap();
+        tx.send(response).unwrap();
     }
 }
 

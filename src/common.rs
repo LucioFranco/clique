@@ -1,3 +1,5 @@
+use futures::stream::FuturesUnordered;
+use std::{future::Future, pin::Pin};
 use uuid::Uuid;
 
 /// The configuration that we are currently on.
@@ -6,6 +8,8 @@ pub type ConfigId = u64;
 pub type RingNumber = i32;
 /// Represents some _node/destination_ in the system.
 pub type Endpoint = String;
+
+pub type Scheduler = FuturesUnordered<Pin<Box<dyn Future<Output = ()> + Send>>>;
 
 /// Represents the NodeId internall it is just a Uuid v4
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]

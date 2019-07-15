@@ -1,4 +1,5 @@
 use crate::{
+    common::Scheduler,
     error::{Error, Result},
     membership::Membership,
     monitor::{ping_pong, Monitor},
@@ -23,6 +24,7 @@ pub struct Cluster<S, C, T> {
     listen_target: T,
     event_tx: watch::Sender<Event>,
     handle: Handle,
+    tasks: Scheduler,
 }
 
 #[derive(Clone)]
@@ -48,6 +50,7 @@ where
             listen_target,
             event_tx,
             handle,
+            tasks: Scheduler::new(),
         }
     }
 
@@ -63,14 +66,11 @@ where
             .unwrap()
             .fuse();
 
-        let mut edge_detector_ticker = Interval::new(Instant::now(), Duration::from_secs(1)).fuse();
-        let mut monitor_jobs = crate::common::Scheduler::new();
-
         let (client_tx, mut client_rx) = mpsc::channel(1000);
         let mut client_rx = client_rx.fuse();
 
         self.membership
-            .create_failure_detectors(&mut monitor_jobs, client_tx.clone());
+            .create_failure_detectors(&mut self.tasks, client_tx.clone());
 
         loop {
             futures::select! {
@@ -88,11 +88,8 @@ where
                     }
 
                 }
-                res = monitor_jobs.next() => {
+                res = self.tasks.next() => {
                 },
-                _ = edge_detector_ticker.next() => {
-                    self.membership.tick().await;
-                }
             };
         }
     }

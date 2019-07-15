@@ -1,3 +1,4 @@
+use super::Monitor;
 use crate::{common::Endpoint, transport::Client};
 use futures::{future, FutureExt};
 use std::{
@@ -6,27 +7,28 @@ use std::{
         Arc,
     },
     time::{Duration, Instant},
+    future::Future
 };
 use tokio_sync::{mpsc, oneshot};
 use tokio_timer::{Delay, Timeout};
 
+pub trait Monitor2 {
+    type Future: Future<Output = ()> + Send + 'static;
+
+    fn monitor(&mut self, subject: Endpoint, client: mpsc::Sender<oneshot::Sender<()>>) -> Self::Future;
+}
+
 #[derive(Debug)]
-pub struct Monitor {
+pub struct PingPong {
     timeout: Duration,
     tick_delay: Duration,
     failures: Arc<AtomicUsize>,
 }
 
-impl Monitor {
-    pub fn new() -> Self {
-        unimplemented!()
-    }
+impl Monitor for PingPong {
+    type Future = future::BoxFuture<'static, ()>;
 
-    pub fn monitor(
-        &mut self,
-        subject: Endpoint,
-        mut client: mpsc::Sender<oneshot::Sender<()>>,
-    ) -> future::BoxFuture<'static, ()> {
+    fn monitor(&mut self, subject: Endpoint, mut client: mpsc::Sender<oneshot::Sender<()>>) -> Self::Future {
         let timeout = self.timeout;
         let tick_delay = self.tick_delay;
         let failures = self.failures.clone();
@@ -45,7 +47,13 @@ impl Monitor {
                 Delay::new(Instant::now() + tick_delay).await;
             }
         }
-            .boxed()
+        .boxed()
+    }
+}
+
+impl PingPong {
+    pub fn new() -> Self {
+        unimplemented!()
     }
 }
 

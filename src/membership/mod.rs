@@ -4,7 +4,7 @@ mod view;
 use crate::{
     common::{Endpoint, Scheduler},
     error::{Error, Result},
-    monitor::Monitor,
+    monitor::{ping_pong, Monitor},
     transport::{
         proto::{self, JoinMessage, JoinResponse, JoinStatus, PreJoinMessage},
         Client, Request, Response,
@@ -17,13 +17,13 @@ use tracing::info;
 use view::View;
 
 #[derive(Debug)]
-pub struct Membership {
+pub struct Membership<M> {
     host_addr: Endpoint,
     view: View,
-    monitor: Monitor,
+    monitor: M,
 }
 
-impl Membership {
+impl<M: Monitor> Membership<M> {
     pub fn new() -> Self {
         unimplemented!()
     }
@@ -134,7 +134,7 @@ impl Membership {
         for subject in self.view.get_subjects(&self.host_addr)? {
             let (tx, rx) = tokio_sync::mpsc::channel(100);
             let fut = self.monitor.monitor(subject.clone(), tx);
-            scheduler.push(fut);
+            scheduler.push(Box::pin(fut));
         }
 
         Ok(())

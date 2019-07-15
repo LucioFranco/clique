@@ -1,6 +1,7 @@
 use crate::{
     error::{Error, Result},
     membership::Membership,
+    monitor::{ping_pong, Monitor},
     transport::{Client, Request, Response, Server},
 };
 use futures::{Stream, StreamExt};
@@ -16,7 +17,7 @@ use tokio_timer::Interval;
 pub struct Event;
 
 pub struct Cluster<S, C, T> {
-    membership: Membership,
+    membership: Membership<ping_pong::PingPong>,
     server: S,
     client: C,
     listen_target: T,
@@ -63,9 +64,6 @@ where
             .fuse();
 
         let mut edge_detector_ticker = Interval::new(Instant::now(), Duration::from_secs(1)).fuse();
-        let mut monitor = crate::monitor::Monitor::new();
-        // let mut batch_alert_
-
         let mut monitor_jobs = crate::common::Scheduler::new();
 
         let (client_tx, mut client_rx) = mpsc::channel(1000);

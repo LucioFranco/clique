@@ -11,7 +11,7 @@ use crate::{
     },
 };
 use futures::FutureExt;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use tokio_sync::{mpsc, oneshot};
 use tracing::info;
 use view::View;
@@ -21,6 +21,7 @@ pub struct Membership<M> {
     host_addr: Endpoint,
     view: View,
     monitor: M,
+    alerts: VecDeque<()>,
 }
 
 impl<M: Monitor> Membership<M> {
@@ -138,6 +139,10 @@ impl<M: Monitor> Membership<M> {
         }
 
         Ok(())
+    }
+
+    pub fn drain_alerts(&mut self) -> Vec<()> {
+        self.alerts.drain(..).take(5).collect()
     }
 
     pub async fn tick(&mut self) {

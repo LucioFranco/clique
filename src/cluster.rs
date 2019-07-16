@@ -72,6 +72,8 @@ where
         self.membership
             .create_failure_detectors(&mut self.tasks, client_tx.clone());
 
+        let mut alert_batcher_interval = Interval::new_interval(Duration::from_millis(100)).fuse();
+
         loop {
             futures::select! {
                 request = server.next() => {
@@ -87,7 +89,10 @@ where
                         None => eprintln!("Client stream closed")
                     }
 
-                }
+                },
+                _ = alert_batcher_interval.next() => {
+                    self.membership.drain_alerts();
+                },
                 res = self.tasks.next() => {
                 },
             };

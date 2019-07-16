@@ -9,14 +9,14 @@
 // TODO: remove this when were ready :)
 #![allow(unused)]
 
+mod alert;
 pub mod cluster;
 mod common;
+mod consensus;
 mod error;
+mod membership;
 mod monitor;
 pub mod transport;
-
-mod consensus;
-mod membership;
 
 pub use self::cluster::Cluster;
 pub use self::error::{Error, Result};

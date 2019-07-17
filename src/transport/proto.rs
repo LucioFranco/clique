@@ -53,7 +53,7 @@ pub struct JoinResponse {
     pub cluster_metadata: HashMap<String, Metadata>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum JoinStatus {
     HostnameAlreadyInRing,
     NodeIdAlreadyInRing,

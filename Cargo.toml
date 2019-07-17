@@ -20,6 +20,7 @@ tokio-sync = { git = "https://github.com/tokio-rs/tokio", features = ["async-tra
 tokio-timer = { git = "https://github.com/tokio-rs/tokio", features = ["async-traits"] }
 twox-hash = "1.4"
 rand = "0.7.0"
+tracing = "0.1"
 
 [dev-dependencies]
 tokio = { git = "https://github.com/LucioFranco/tokio" }

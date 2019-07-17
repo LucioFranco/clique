@@ -147,10 +147,10 @@ where
             .and_modify(|votes| *votes += 1)
             .or_insert(0);
 
-        let F = ((self.size - 1) as f64 / 4f64).floor();
+        let f = ((self.size - 1) as f64 / 4f64).floor();
 
-        if self.votes_received.len() >= (self.size as f64 - F) as usize {
-            if *count >= (self.size as f64 - F) as usize {
+        if self.votes_received.len() >= (self.size as f64 - f) as usize {
+            if *count >= (self.size as f64 - f) as usize {
                 return self.on_decide(request.endpoints.clone());
             }
         }

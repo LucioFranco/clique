@@ -11,7 +11,7 @@ pub struct GrpcClient {
 
 impl Client for GrpcClient {
     type Error = crate::Error;
-    type Future = Box<dyn Future<Output = Result<Response, Self::Error>> + Unpin>;
+    type Future = Box<dyn Future<Output = Result<Response, Self::Error>> + Unpin + Send>;
 
     fn call(&mut self, req: Request) -> Self::Future {
         let req = tower_grpc::Request::new(req.into_inner().into());

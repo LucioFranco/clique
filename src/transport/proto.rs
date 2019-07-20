@@ -2,7 +2,7 @@ use crate::common::{ConfigId, Endpoint, NodeId, RingNumber};
 use bytes::Bytes;
 use std::collections::HashMap;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum RequestKind {
     PreJoin(PreJoinMessage),
     Join(JoinMessage),
@@ -18,7 +18,7 @@ pub enum ResponseKind {
     Consensus(Consensus),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Consensus {
     FastRoundPhase2bMessage(FastRoundPhase2bMessage),
     Phase1aMessage(Phase1aMessage),
@@ -76,7 +76,7 @@ pub struct Phase1aMessage {
     pub rank: Rank,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Phase1bMessage {
     pub sender: Endpoint,
     pub config_id: ConfigId,
@@ -106,7 +106,7 @@ pub struct Metadata {
     pub metadata: HashMap<String, Bytes>,
 }
 
-#[derive(Debug, Copy)]
+#[derive(Debug, Copy, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct Rank {
     pub round: u32,
     pub node_index: u32,

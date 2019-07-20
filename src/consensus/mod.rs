@@ -6,7 +6,7 @@ use std::{
 
 use futures::FutureExt;
 use rand::Rng;
-use tokio_sync::oneshot;
+use tokio_sync::{oneshot, mpsc};
 use tokio_timer::Delay;
 
 mod paxos;
@@ -17,8 +17,8 @@ use crate::{
     common::{ConfigId, Endpoint},
     error::{Error, Result},
     transport::{
-        proto::{self},
-        Broadcast, Client, Request,
+        proto::{self, RequestKind::*, Consensus::*, Consensus},
+        Broadcast, Client, Request, Response
     },
 };
 
@@ -33,29 +33,25 @@ const BASE_DELAY: u64 = 1000;
 /// If a quorum is not formed, then it falls back to an instance of regular Paxos, which is
 /// scheduled to be run after a random interval of time. The randomness is introduced so that
 /// multiple nodes do not start their own instances of paxos as coordinators.
-pub struct FastPaxos<'a, C, B> {
-    broadcast: &'a mut B,
+pub struct FastPaxos {
+    broadcast: mpsc::Sender<(Request, oneshot::Sender<Response>)>,
     my_addr: Endpoint,
     size: usize,
     decided: AtomicBool,
-    paxos: Option<Paxos<'a, C>>,
+    paxos: Option<Paxos>,
     config_id: ConfigId,
     votes_received: HashSet<Endpoint>, // should be a bitset?
     votes_per_proposal: HashMap<Vec<Endpoint>, usize>,
 }
 
-impl<'a, C, B> FastPaxos<'a, C, B>
-where
-    C: Client,
-    B: Broadcast,
-{
+impl FastPaxos {
     pub fn new(
         my_addr: Endpoint,
         size: usize,
-        client: &'a mut C,
-        broadcast: &'a mut B,
+        client: mpsc::Sender<(Request, oneshot::Sender<Response>)>,
+        broadcast: mpsc::Sender<(Request, oneshot::Sender<Response>)>,
         config_id: ConfigId,
-    ) -> FastPaxos<'a, C, B> {
+    ) -> FastPaxos {
         FastPaxos {
             broadcast,
             config_id,
@@ -85,9 +81,8 @@ where
         let (tx, rx) = oneshot::channel();
 
         let request = Request::new_fast_round(tx, self.my_addr.clone(), self.config_id, proposal);
-
-        // TODO: Handle Vec<Result<Response>>
-        self.broadcast.broadcast(request).await;
+        
+        self.broadcast.send((request, tx));
         rx.await.map_err(|_| Error::new_broken_pipe(None))?;
 
         Ok(())
@@ -104,29 +99,23 @@ where
     /// * `AlreadyReachedConsensus`: If this is called after the cluster has already reached
     /// consensus.
     /// * `FastRoundFailure`: If fast paxos is unable to reach consensus
-    pub async fn handle_message(&mut self, request: Request) -> Result<Vec<Endpoint>> {
-        match request.kind() {
-            proto::RequestKind::Consensus(req_type) => {
+    pub async fn handle_message(&mut self, msg: Consensus, res_tx: oneshot::Sender<Result<Response>>) -> Result<()> {
+        match msg {
+            FastRoundPhase2bMessage(req) => {
                 if self.paxos.is_some() {
-                    match req_type {
-                        proto::Consensus::FastRoundPhase2bMessage(msg) => {
-                            self.handle_fast_round(msg).await
-                        }
-                        // TODO: need to figure out communication b/w paxos and fast paxos
-                        _ => unimplemented!(),
-                    }
-                } else {
-                    Err(Error::new_unexpected_request(None))
+                    return self.handle_fast_round(&req).await;
                 }
-            }
-            _ => Err(Error::new_unexpected_request(None)),
-        }
+            },
+            _ => unimplemented!()
+        };
+
+        Ok(())
     }
 
     async fn handle_fast_round(
         &mut self,
         request: &proto::FastRoundPhase2bMessage,
-    ) -> crate::Result<Vec<Endpoint>> {
+    ) -> crate::Result<()> {
         if request.config_id != self.config_id {
             return Err(Error::new_unexpected_request(None));
         }
@@ -158,7 +147,7 @@ where
         Err(Error::fast_round_failure())
     }
 
-    fn on_decide(&mut self, hosts: Vec<Endpoint>) -> Result<Vec<Endpoint>> {
+    fn on_decide(&mut self, hosts: Vec<Endpoint>) -> Result<()> {
         // This is the only place where the value is set to `true`.
         self.decided.store(true, Ordering::SeqCst);
 
@@ -168,13 +157,15 @@ where
             drop(instance);
         }
 
-        Ok(hosts)
+        // TODO: surface decision to membership
+        Ok(())
     }
 
     async fn start_classic_round(&mut self) -> Result<()> {
         if !self.decided.load(Ordering::SeqCst) {
             if let Some(paxos) = &mut self.paxos {
-                paxos.start_round().await?;
+                // The java impl does this..
+                paxos.start_phase_1a(2).await?;
             }
         }
         Ok(())

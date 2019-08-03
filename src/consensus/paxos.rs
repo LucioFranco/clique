@@ -15,6 +15,7 @@ use std::{collections::HashMap, convert::TryInto, hash::Hasher};
 use tokio_sync::{mpsc, oneshot};
 use twox_hash::XxHash32;
 
+#[derive(Debug)]
 pub struct Paxos {
     // TODO: come up with a design for onDecide
     client: mpsc::Sender<(Request, oneshot::Sender<Response>)>,
@@ -75,7 +76,7 @@ impl Paxos {
     /// Using ranks as round numbers ensure uniquenes even with multiple rounds happening at the
     /// same time.
     pub async fn start_phase_1a(&mut self, round: u32) -> Result<()> {
-        if self.crnd > round {
+        if self.crnd.round > round {
             // TODO: handle these () returns
             return Ok(());
         }
@@ -101,7 +102,7 @@ impl Paxos {
 
         let request = Request::new(tx, kind);
 
-        self.client.send((request, tx));
+        // self.client.send((request, tx));
         rx.await.map_err(|_| Error::new_broken_pipe(None))?;
 
         Ok(())
@@ -110,19 +111,19 @@ impl Paxos {
     /// At acceptor, handle a Phase 1a message from a coordinator.
     ///
     /// If `crnd` > then we don't respond back.
-    pub(crate) async fn handle_phase_1a(&self, request: Request) -> crate::Result<()> {
-        let RequestKind::Consensus(Consensus::Phase1aMessage(Phase1aMessage {
+    pub(crate) async fn handle_phase_1a(&mut self, request: Phase1aMessage) -> crate::Result<()> {
+        let Phase1aMessage {
             sender,
             config_id,
             rank,
-        })) = request.kind();
+        } = request;
 
-        if *config_id != self.config_id {
+        if config_id != self.config_id {
             return Err(Error::new_unexpected_request(None));
         }
 
-        if self.crnd < *rank {
-            self.crnd = *rank;
+        if self.crnd < rank {
+            self.crnd = rank;
         } else {
             // TODO: new error type for rejecting message due to lower rank
             return Err(Error::new_unexpected_request(None));
@@ -133,13 +134,13 @@ impl Paxos {
             rnd: self.rnd,
             sender: self.my_addr.clone(),
             vrnd: self.vrnd,
-            vval: self.vval,
+            vval: self.vval.clone(),
         }));
 
         let (tx, rx) = oneshot::channel();
         let request = Request::new(tx, kind);
 
-        self.client.send((request, tx));
+        // self.client.send((request, tx));
         rx.await.map_err(|_| Error::new_broken_pipe(None))?;
 
         Ok(())
@@ -147,23 +148,23 @@ impl Paxos {
 
     /// At coordinator, coolect phase 1b messages from acceptors and check if they have already
     /// voted and if a value might have already been chosen
-    pub(crate) async fn handle_phase_1b(&self, request: Request) -> crate::Result<()> {
-        let RequestKind::Consensus(Consensus::Phase1bMessage(message)) = request.kind().clone();
+    pub(crate) async fn handle_phase_1b(&mut self, request: Phase1bMessage) -> crate::Result<()> {
+        let message = request.clone();
 
-        let RequestKind::Consensus(Consensus::Phase1bMessage(Phase1bMessage {
+        let Phase1bMessage {
             sender,
             config_id,
             rnd,
             vrnd,
             vval,
-        })) = request.kind();
+        } = request;
 
-        if *config_id != self.config_id {
+        if config_id != self.config_id {
             return Err(Error::new_unexpected_request(None));
         }
 
         // Only handle responses where crnd == i
-        if *rnd != self.crnd {
+        if rnd != self.crnd {
             return Err(Error::new_unexpected_request(None));
         }
 
@@ -171,7 +172,7 @@ impl Paxos {
 
         if self.phase_1b_messages.len() > (self.size / 2) {
             let chosen_proposal = select_proposal(message);
-            if self.crnd == *rnd && self.cval.len() == 0 && chosen_proposal.len() > 0 {
+            if self.crnd == rnd && self.cval.len() == 0 && chosen_proposal.len() > 0 {
                 self.cval = chosen_proposal.clone();
                 let kind = RequestKind::Consensus(Consensus::Phase2aMessage(Phase2aMessage {
                     sender: self.my_addr.clone(),
@@ -183,7 +184,7 @@ impl Paxos {
 
                 let request = Request::new(tx, kind);
 
-                self.client.send((request, tx));
+                // self.client.send((request, tx));
                 rx.await.map_err(|_| Error::new_broken_pipe(None))?;
             }
         }
@@ -192,54 +193,54 @@ impl Paxos {
     }
 
     /// At acceptor, accept a phase 2a message.
-    pub(crate) async fn handle_phase_2a(&self, request: Request) -> crate::Result<()> {
-        let RequestKind::Consensus(Consensus::Phase2aMessage(Phase2aMessage {
+    pub(crate) async fn handle_phase_2a(&mut self, request: Phase2aMessage) -> crate::Result<()> {
+        let Phase2aMessage {
             sender,
             config_id,
             rnd,
             vval,
-        })) = request.kind();
+        } = request;
 
-        if *config_id != self.config_id {
-            Err(Error::new_unexpected_request(None));
+        if config_id != self.config_id {
+            return Err(Error::new_unexpected_request(None));
         }
 
-        if self.rnd <= *rnd && self.vrnd != *rnd {
-            self.rnd = *rnd.clone();
-            self.vrnd = *rnd;
+        if self.rnd <= rnd && self.vrnd != rnd {
+            self.rnd = rnd.clone();
+            self.vrnd = rnd;
             self.vval = vval.clone();
 
             let kind = RequestKind::Consensus(Consensus::Phase2bMessage(Phase2bMessage {
-                config_id: *config_id,
-                rnd: *rnd,
+                config_id: config_id,
+                rnd: rnd,
                 sender: self.my_addr.clone(),
-                endpoints: *vval,
+                endpoints: vval,
             }));
 
             let (tx, rx) = oneshot::channel();
 
             let request = Request::new(tx, kind);
 
-            self.client.send((request, tx));
+            // self.client.send((request, tx));
             rx.await.map_err(|_| Error::new_broken_pipe(None))?;
         }
 
         Ok(())
     }
 
-    pub(crate) async fn handle_phase_2b(&self, request: Request) -> crate::Result<()> {
-        let RequestKind::Consensus(Consensus::Phase2bMessage(Phase2bMessage {
+    pub(crate) async fn handle_phase_2b(&mut self, request: Phase2bMessage) -> crate::Result<()> {
+        let Phase2bMessage {
             config_id,
             rnd,
             sender,
             endpoints,
-        })) = request.kind();
+        } = request;
 
-        if *config_id != self.config_id {
+        if config_id != self.config_id {
             return Err(Error::new_unexpected_request(None));
         }
 
-        let phase_2b_messages_in_rnd = self.accept_responses.entry(*rnd).or_insert(HashMap::new());
+        let phase_2b_messages_in_rnd = self.accept_responses.entry(rnd).or_insert(HashMap::new());
 
         if phase_2b_messages_in_rnd.len() > (self.size / 2) && !self.decided {
             let decision = endpoints;

@@ -2,7 +2,7 @@ use crate::common::{ConfigId, Endpoint, NodeId, RingNumber};
 use bytes::Bytes;
 use std::collections::HashMap;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum RequestKind {
     PreJoin(PreJoinMessage),
     Join(JoinMessage),
@@ -18,7 +18,7 @@ pub enum ResponseKind {
     Consensus(Consensus),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum Consensus {
     FastRoundPhase2bMessage(FastRoundPhase2bMessage),
     Phase1aMessage(Phase1aMessage),
@@ -27,7 +27,7 @@ pub enum Consensus {
     Phase2bMessage(Phase2bMessage),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PreJoinMessage {
     pub sender: Endpoint,
     pub node_id: NodeId,
@@ -35,7 +35,7 @@ pub struct PreJoinMessage {
     pub config_id: ConfigId,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct JoinMessage {
     pub sender: Endpoint,
     pub node_id: NodeId,
@@ -43,7 +43,7 @@ pub struct JoinMessage {
     pub config_id: ConfigId,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct JoinResponse {
     pub sender: Endpoint,
     pub status: JoinStatus,
@@ -53,7 +53,7 @@ pub struct JoinResponse {
     pub cluster_metadata: HashMap<String, Metadata>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum JoinStatus {
     HostnameAlreadyInRing,
     NodeIdAlreadyInRing,
@@ -62,14 +62,14 @@ pub enum JoinStatus {
     MembershipRejected,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FastRoundPhase2bMessage {
     pub sender: Endpoint,
     pub config_id: ConfigId,
     pub endpoints: Vec<Endpoint>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Phase1aMessage {
     pub sender: Endpoint,
     pub config_id: ConfigId,
@@ -85,7 +85,7 @@ pub struct Phase1bMessage {
     pub vval: Vec<Endpoint>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Phase2aMessage {
     pub sender: Endpoint,
     pub config_id: ConfigId,
@@ -93,7 +93,7 @@ pub struct Phase2aMessage {
     pub vval: Vec<Endpoint>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Phase2bMessage {
     pub sender: Endpoint,
     pub config_id: ConfigId,
@@ -101,12 +101,12 @@ pub struct Phase2bMessage {
     pub endpoints: Vec<Endpoint>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Metadata {
     pub metadata: HashMap<String, Bytes>,
 }
 
-#[derive(Debug, Copy, Hash, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct Rank {
     pub round: u32,
     pub node_index: u32,

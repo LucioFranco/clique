@@ -33,6 +33,7 @@ const BASE_DELAY: u64 = 1000;
 /// If a quorum is not formed, then it falls back to an instance of regular Paxos, which is
 /// scheduled to be run after a random interval of time. The randomness is introduced so that
 /// multiple nodes do not start their own instances of paxos as coordinators.
+#[derive(Debug)]
 pub struct FastPaxos {
     broadcast: mpsc::Sender<(Request, oneshot::Sender<Response>)>,
     my_addr: Endpoint,
@@ -81,8 +82,8 @@ impl FastPaxos {
         let (tx, rx) = oneshot::channel();
 
         let request = Request::new_fast_round(tx, self.my_addr.clone(), self.config_id, proposal);
-        
-        self.broadcast.send((request, tx));
+
+        // self.broadcast.send((request, tx));
         rx.await.map_err(|_| Error::new_broken_pipe(None))?;
 
         Ok(())

@@ -3,6 +3,7 @@ mod view;
 
 use crate::{
     common::{Endpoint, Scheduler},
+    consensus::FastPaxos,
     error::{Error, Result},
     monitor::{ping_pong, Monitor},
     transport::{
@@ -22,6 +23,7 @@ pub struct Membership<M> {
     view: View,
     monitor: M,
     alerts: VecDeque<()>,
+    paxos: FastPaxos,
 }
 
 impl<M: Monitor> Membership<M> {
@@ -40,6 +42,7 @@ impl<M: Monitor> Membership<M> {
         match kind {
             PreJoin(msg) => self.handle_pre_join(msg, res_tx).await?,
             Join(msg) => self.handle_join(msg, res_tx).await?,
+            Consensus(msg) => self.paxos.handle_message(msg, res_tx).await?,
             _ => unimplemented!(),
         }
 

@@ -89,11 +89,9 @@ impl FastPaxos {
 
         scheduler.push(Box::pin(task));
 
-        let previous_tx = self.cancel_tx.replace(tx);
-
         // Make sure to cancel the previous task if it's present. There is always only one instance
         // of a classic paxos round
-        if let Some(cancel) = previous_tx {
+        if let Some(cancel) = self.cancel_tx.replace(tx) {
             cancel.send(());
         }
 
@@ -125,7 +123,7 @@ impl FastPaxos {
     ) -> Result<()> {
         match msg {
             FastRoundPhase2bMessage(req) => {
-                return self.handle_fast_round(&req).await;
+                self.handle_fast_round(&req).await
             }
             _ => unimplemented!(),
         };

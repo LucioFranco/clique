@@ -33,7 +33,7 @@ const BASE_DELAY: u64 = 1000;
 /// multiple nodes do not start their own instances of paxos as coordinators.
 #[derive(Debug)]
 pub struct FastPaxos {
-    broadcast: mpsc::Sender<(Request, oneshot::Sender<Response>)>,
+    broadcast: mpsc::Sender<Request>,
     my_addr: Endpoint,
     size: usize,
     decided: AtomicBool,
@@ -48,7 +48,7 @@ impl FastPaxos {
         my_addr: Endpoint,
         size: usize,
         client: mpsc::Sender<(Request, oneshot::Sender<Response>)>,
-        broadcast: mpsc::Sender<(Request, oneshot::Sender<Response>)>,
+        broadcast: mpsc::Sender<Request>,
         config_id: ConfigId,
     ) -> FastPaxos {
         FastPaxos {
@@ -82,12 +82,9 @@ impl FastPaxos {
         //     self.start_classic_round().await;
         // };
 
-        let (tx, rx) = oneshot::channel();
+        let request = Request::new_fast_round(None, self.my_addr.clone(), self.config_id, proposal);
 
-        let request = Request::new_fast_round(tx, self.my_addr.clone(), self.config_id, proposal);
-
-        // self.broadcast.send((request, tx));
-        rx.await.map_err(|_| Error::new_broken_pipe(None))?;
+        self.broadcast.send(request);
 
         Ok(())
     }

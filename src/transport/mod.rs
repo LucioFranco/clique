@@ -33,7 +33,7 @@ pub trait Broadcast {
 #[derive(Debug)]
 pub struct Request {
     kind: proto::RequestKind,
-    res_tx: oneshot::Sender<crate::Result<Response>>,
+    res_tx: Option<oneshot::Sender<crate::Result<Response>>>,
 }
 
 #[derive(Debug)]
@@ -42,7 +42,10 @@ pub struct Response {
 }
 
 impl Request {
-    pub fn new(res_tx: oneshot::Sender<crate::Result<Response>>, kind: proto::RequestKind) -> Self {
+    pub fn new(
+        res_tx: Option<oneshot::Sender<crate::Result<Response>>>,
+        kind: proto::RequestKind,
+    ) -> Self {
         Self { res_tx, kind }
     }
 
@@ -52,6 +55,8 @@ impl Request {
 
     pub fn respond(self, res: Response) -> crate::Result<()> {
         self.res_tx
+            // TODO: clean up this unwrap
+            .unwrap()
             .send(Ok(res))
             // TODO: prob should be transport dropped
             .map_err(|_| Error::new_broken_pipe(None))
@@ -62,11 +67,11 @@ impl Request {
     }
 
     pub fn into_parts(self) -> (proto::RequestKind, oneshot::Sender<crate::Result<Response>>) {
-        (self.kind, self.res_tx)
+        (self.kind, self.res_tx.unwrap())
     }
 
     pub fn new_fast_round(
-        res_tx: oneshot::Sender<crate::Result<Response>>,
+        res_tx: Option<oneshot::Sender<crate::Result<Response>>>,
         sender: Endpoint,
         config_id: ConfigId,
         endpoints: Vec<Endpoint>,

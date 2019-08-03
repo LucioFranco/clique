@@ -41,8 +41,7 @@ pub struct FastPaxos {
     config_id: ConfigId,
     votes_received: HashSet<Endpoint>, // should be a bitset?
     votes_per_proposal: HashMap<Vec<Endpoint>, usize>,
-    cancel_rx: Fuse<oneshot::Receiver<()>>,
-    cancel_tx: oneshot::Sender<()>,
+    cancel_tx: Option<oneshot::Sender<()>>,
 }
 
 impl FastPaxos {
@@ -53,8 +52,6 @@ impl FastPaxos {
         broadcast: mpsc::Sender<(Request, oneshot::Sender<Response>)>,
         config_id: ConfigId,
     ) -> FastPaxos {
-        let (tx, rx) = oneshot::channel();
-
         FastPaxos {
             broadcast,
             config_id,
@@ -64,8 +61,7 @@ impl FastPaxos {
             paxos: Paxos::new(client, size, my_addr, config_id),
             votes_received: HashSet::default(),
             votes_per_proposal: HashMap::default(),
-            cancel_rx: rx.fuse(),
-            cancel_tx: tx,
+            cancel_tx: None,
         }
     }
 
@@ -81,14 +77,20 @@ impl FastPaxos {
     ) -> Result<()> {
         let mut paxos_delay = Delay::new(Instant::now() + self.get_random_delay()).fuse();
 
+        let (tx, cancel_rx) = oneshot::channel();
+        let mut cancel_rx = cancel_rx.fuse();
+
         let task = async move {
             futures::select! {
-                _ = self.cancel_rx => SchedulerEvents::None,
+                _ = cancel_rx => SchedulerEvents::None,
                 _ = paxos_delay => SchedulerEvents::StartClassicRound,
             }
         };
 
         scheduler.push(Box::pin(task));
+
+        // Store the sender end so that we can cancel it if we reach a decision
+        self.cancel_tx = Some(tx);
 
         let (tx, rx) = oneshot::channel();
 
@@ -165,7 +167,9 @@ impl FastPaxos {
         // This is the only place where the value is set to `true`.
         self.decided.store(true, Ordering::SeqCst);
 
-        self.cancel_tx.send(());
+        if let Some(cancel_tx) = self.cancel_tx.take() {
+            cancel_tx.send(());
+        }
 
         // TODO: surface decision to membership
         Ok(())

@@ -6,7 +6,7 @@ use std::{
 
 use futures::FutureExt;
 use rand::Rng;
-use tokio_sync::{oneshot, mpsc};
+use tokio_sync::{mpsc, oneshot};
 use tokio_timer::Delay;
 
 mod paxos;
@@ -17,8 +17,8 @@ use crate::{
     common::{ConfigId, Endpoint},
     error::{Error, Result},
     transport::{
-        proto::{self, RequestKind::*, Consensus::*, Consensus},
-        Broadcast, Client, Request, Response
+        proto::{self, Consensus, Consensus::*, RequestKind::*},
+        Broadcast, Client, Request, Response,
     },
 };
 
@@ -100,14 +100,18 @@ impl FastPaxos {
     /// * `AlreadyReachedConsensus`: If this is called after the cluster has already reached
     /// consensus.
     /// * `FastRoundFailure`: If fast paxos is unable to reach consensus
-    pub async fn handle_message(&mut self, msg: Consensus, res_tx: oneshot::Sender<Result<Response>>) -> Result<()> {
+    pub async fn handle_message(
+        &mut self,
+        msg: Consensus,
+        res_tx: oneshot::Sender<Result<Response>>,
+    ) -> Result<()> {
         match msg {
             FastRoundPhase2bMessage(req) => {
                 if self.paxos.is_some() {
                     return self.handle_fast_round(&req).await;
                 }
-            },
-            _ => unimplemented!()
+            }
+            _ => unimplemented!(),
         };
 
         Ok(())

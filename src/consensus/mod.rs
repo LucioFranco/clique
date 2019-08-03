@@ -1,26 +1,24 @@
-use std::{
-    collections::{HashMap, HashSet},
-    sync::atomic::{AtomicBool, Ordering},
-    time::{Duration, Instant},
-};
-
-use futures::FutureExt;
-use rand::Rng;
-use tokio_sync::{mpsc, oneshot};
-use tokio_timer::Delay;
-
 mod paxos;
 
-use paxos::Paxos;
-
 use crate::{
-    common::{ConfigId, Endpoint},
+    common::{ConfigId, Endpoint, Scheduler, SchedulerEvents},
     error::{Error, Result},
     transport::{
         proto::{self, Consensus, Consensus::*, RequestKind::*},
         Broadcast, Client, Request, Response,
     },
 };
+use futures::FutureExt;
+use rand::Rng;
+use std::{
+    collections::{HashMap, HashSet},
+    sync::atomic::{AtomicBool, Ordering},
+    time::{Duration, Instant},
+};
+use tokio_sync::{mpsc, oneshot};
+use tokio_timer::Delay;
+
+use paxos::Paxos;
 
 const BASE_DELAY: u64 = 1000;
 
@@ -70,14 +68,19 @@ impl FastPaxos {
     /// # Errors
     ///
     /// Returns `NewBrokenPipe` if the broadcast was not sucessful
-    pub async fn propose(&mut self, proposal: Vec<Endpoint>) -> Result<()> {
-        let paxos_delay = Delay::new(Instant::now() + self.get_random_delay()).fuse();
+    pub async fn propose(
+        &mut self,
+        proposal: Vec<Endpoint>,
+        scheduler: &mut Scheduler,
+    ) -> Result<()> {
+        let paxos_delay = Delay::new(Instant::now() + self.get_random_delay())
+            .map(|_| SchedulerEvents::StartClassicRound);
 
-        async {
-            paxos_delay.await;
-            self.start_classic_round().await;
-        }
-            .await;
+        scheduler.push(Box::pin(paxos_delay));
+        // let async {
+        //     paxos_delay.await;
+        //     self.start_classic_round().await;
+        // };
 
         let (tx, rx) = oneshot::channel();
 
@@ -166,7 +169,7 @@ impl FastPaxos {
         Ok(())
     }
 
-    async fn start_classic_round(&mut self) -> Result<()> {
+    pub async fn start_classic_round(&mut self) -> Result<()> {
         if !self.decided.load(Ordering::SeqCst) {
             if let Some(paxos) = &mut self.paxos {
                 // The java impl does this..

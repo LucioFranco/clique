@@ -8,6 +8,8 @@ use crate::{
         Broadcast, Client, Request, Response,
     },
 };
+use futures::{future::Fuse, FutureExt};
+use rand::Rng;
 use std::{
     collections::{HashMap, HashSet},
     sync::atomic::{AtomicBool, Ordering},
@@ -15,9 +17,6 @@ use std::{
 };
 use tokio_sync::{mpsc, oneshot};
 use tokio_timer::Delay;
-use futures::{future::Fuse, FutureExt};
-use rand::Rng;
-
 
 use paxos::Paxos;
 
@@ -38,7 +37,7 @@ pub struct FastPaxos {
     my_addr: Endpoint,
     size: usize,
     decided: AtomicBool,
-    paxos: Option<Paxos>,
+    paxos: Paxos,
     config_id: ConfigId,
     votes_received: HashSet<Endpoint>, // should be a bitset?
     votes_per_proposal: HashMap<Vec<Endpoint>, usize>,
@@ -62,7 +61,7 @@ impl FastPaxos {
             size: size,
             my_addr: my_addr.clone(),
             decided: AtomicBool::new(false),
-            paxos: Some(Paxos::new(client, size, my_addr, config_id)),
+            paxos: Paxos::new(client, size, my_addr, config_id),
             votes_received: HashSet::default(),
             votes_per_proposal: HashMap::default(),
             cancel_rx: rx.fuse(),
@@ -83,7 +82,7 @@ impl FastPaxos {
         let mut paxos_delay = Delay::new(Instant::now() + self.get_random_delay()).fuse();
 
         let task = async move {
-            futures::select!{
+            futures::select! {
                 _ = self.cancel_rx => SchedulerEvents::None,
                 _ = paxos_delay => SchedulerEvents::StartClassicRound,
             }
@@ -119,9 +118,7 @@ impl FastPaxos {
     ) -> Result<()> {
         match msg {
             FastRoundPhase2bMessage(req) => {
-                if self.paxos.is_some() {
-                    return self.handle_fast_round(&req).await;
-                }
+                return self.handle_fast_round(&req).await;
             }
             _ => unimplemented!(),
         };
@@ -168,11 +165,7 @@ impl FastPaxos {
         // This is the only place where the value is set to `true`.
         self.decided.store(true, Ordering::SeqCst);
 
-        let paxos_instance = self.paxos.take();
-
-        if let Some(instance) = paxos_instance {
-            drop(instance);
-        }
+        self.cancel_tx.send(());
 
         // TODO: surface decision to membership
         Ok(())
@@ -180,10 +173,8 @@ impl FastPaxos {
 
     pub async fn start_classic_round(&mut self) -> Result<()> {
         if !self.decided.load(Ordering::SeqCst) {
-            if let Some(paxos) = &mut self.paxos {
-                // The java impl does this..
-                paxos.start_phase_1a(2).await?;
-            }
+            // The java impl does this..
+            self.paxos.start_phase_1a(2).await?;
         }
         Ok(())
     }

@@ -79,7 +79,7 @@ impl server::MembershipService for Svc {
     ) -> Self::SendRequestFuture {
         let inbound_req = request.into_inner();
         let (res_tx, res_rx) = oneshot::channel();
-        let req = Request::new(res_tx, inbound_req.into());
+        let req = Request::new(Some(res_tx), inbound_req.into());
 
         // TODO: poll_ready first find way to
         self.msg_tx.try_send(Ok(req)).unwrap();

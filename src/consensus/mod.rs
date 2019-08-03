@@ -89,8 +89,13 @@ impl FastPaxos {
 
         scheduler.push(Box::pin(task));
 
-        // Store the sender end so that we can cancel it if we reach a decision
-        self.cancel_tx = Some(tx);
+        let previous_tx = self.cancel_tx.replace(tx);
+
+        // Make sure to cancel the previous task if it's present. There is always only one instance
+        // of a classic paxos round
+        if let Some(cancel) = previous_tx {
+            cancel.send(());
+        }
 
         let (tx, rx) = oneshot::channel();
 

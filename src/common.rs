@@ -9,7 +9,14 @@ pub type RingNumber = i32;
 /// Represents some _node/destination_ in the system.
 pub type Endpoint = String;
 
-pub type Scheduler = FuturesUnordered<Pin<Box<dyn Future<Output = ()> + Send>>>;
+pub type Scheduler = FuturesUnordered<Pin<Box<dyn Future<Output = SchedulerEvents> + Send>>>;
+
+pub enum SchedulerEvents {
+    /// Event to trigger the start of a classic paxos round
+    StartClassicRound,
+    /// An event that has no return type
+    None,
+}
 
 /// Represents the NodeId internall it is just a Uuid v4
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]

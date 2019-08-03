@@ -2,7 +2,7 @@ mod ring;
 mod view;
 
 use crate::{
-    common::{Endpoint, Scheduler},
+    common::{Endpoint, Scheduler, SchedulerEvents},
     consensus::FastPaxos,
     error::{Error, Result},
     monitor::{ping_pong, Monitor},
@@ -35,7 +35,7 @@ impl<M: Monitor> Membership<M> {
         self.view.clone()
     }
 
-    pub async fn handle_message(&mut self, req: Request) -> Result<()> {
+    pub async fn handle_message(&mut self, req: Request, scheduler: &mut Scheduler) -> Result<()> {
         use proto::RequestKind::*;
         let (kind, res_tx) = req.into_parts();
 
@@ -47,6 +47,10 @@ impl<M: Monitor> Membership<M> {
         }
 
         Ok(())
+    }
+
+    pub async fn start_classic_round(&mut self) -> Result<()> {
+        self.paxos.start_classic_round().await
     }
 
     pub async fn handle_pre_join(
@@ -138,7 +142,7 @@ impl<M: Monitor> Membership<M> {
         for subject in self.view.get_subjects(&self.host_addr)? {
             let (tx, rx) = tokio_sync::mpsc::channel(100);
             let fut = self.monitor.monitor(subject.clone(), tx);
-            scheduler.push(Box::pin(fut));
+            scheduler.push(Box::pin(fut.map(|_| SchedulerEvents::None)));
         }
 
         Ok(())

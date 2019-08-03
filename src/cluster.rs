@@ -1,5 +1,5 @@
 use crate::{
-    common::Scheduler,
+    common::{Scheduler, SchedulerEvents},
     error::{Error, Result},
     membership::Membership,
     monitor::{ping_pong, Monitor},
@@ -73,14 +73,25 @@ where
             .create_failure_detectors(&mut self.tasks, client_tx.clone());
 
         let mut alert_batcher_interval = Interval::new_interval(Duration::from_millis(100)).fuse();
+        let mut scheduler = Scheduler::new();
 
         loop {
             futures::select! {
                 request = server.next() => {
                     if let Some(Ok(request)) = request {
-                        self.membership.handle_message(request).await;
+                        self.membership.handle_message(request, &mut scheduler).await;
                     } else {
                         return Err(Error::new_join(None))
+                    }
+                },
+                event = scheduler.select_next_some() => {
+                    match event {
+                        SchedulerEvents::StartClassicRound => {
+                            self.membership.start_classic_round().await;
+                            continue;
+                        },
+                        SchedulerEvents::None => continue,
+                        _ => unimplemented!()
                     }
                 },
                 item = client_rx.next() => {

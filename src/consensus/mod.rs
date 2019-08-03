@@ -8,8 +8,6 @@ use crate::{
         Broadcast, Client, Request, Response,
     },
 };
-use futures::FutureExt;
-use rand::Rng;
 use std::{
     collections::{HashMap, HashSet},
     sync::atomic::{AtomicBool, Ordering},
@@ -17,6 +15,9 @@ use std::{
 };
 use tokio_sync::{mpsc, oneshot};
 use tokio_timer::Delay;
+use futures::{future::Fuse, FutureExt};
+use rand::Rng;
+
 
 use paxos::Paxos;
 
@@ -41,6 +42,8 @@ pub struct FastPaxos {
     config_id: ConfigId,
     votes_received: HashSet<Endpoint>, // should be a bitset?
     votes_per_proposal: HashMap<Vec<Endpoint>, usize>,
+    cancel_rx: Fuse<oneshot::Receiver<()>>,
+    cancel_tx: oneshot::Sender<()>,
 }
 
 impl FastPaxos {
@@ -51,6 +54,8 @@ impl FastPaxos {
         broadcast: mpsc::Sender<(Request, oneshot::Sender<Response>)>,
         config_id: ConfigId,
     ) -> FastPaxos {
+        let (tx, rx) = oneshot::channel();
+
         FastPaxos {
             broadcast,
             config_id,
@@ -60,6 +65,8 @@ impl FastPaxos {
             paxos: Some(Paxos::new(client, size, my_addr, config_id)),
             votes_received: HashSet::default(),
             votes_per_proposal: HashMap::default(),
+            cancel_rx: rx.fuse(),
+            cancel_tx: tx,
         }
     }
 
@@ -73,14 +80,16 @@ impl FastPaxos {
         proposal: Vec<Endpoint>,
         scheduler: &mut Scheduler,
     ) -> Result<()> {
-        let paxos_delay = Delay::new(Instant::now() + self.get_random_delay())
-            .map(|_| SchedulerEvents::StartClassicRound);
+        let mut paxos_delay = Delay::new(Instant::now() + self.get_random_delay()).fuse();
 
-        scheduler.push(Box::pin(paxos_delay));
-        // let async {
-        //     paxos_delay.await;
-        //     self.start_classic_round().await;
-        // };
+        let task = async move {
+            futures::select!{
+                _ = self.cancel_rx => SchedulerEvents::None,
+                _ = paxos_delay => SchedulerEvents::StartClassicRound,
+            }
+        };
+
+        scheduler.push(Box::pin(task));
 
         let (tx, rx) = oneshot::channel();
 

@@ -122,9 +122,7 @@ impl FastPaxos {
         res_tx: oneshot::Sender<Result<Response>>,
     ) -> Result<()> {
         match msg {
-            FastRoundPhase2bMessage(req) => {
-                self.handle_fast_round(&req).await
-            }
+            FastRoundPhase2bMessage(req) => self.handle_fast_round(&req).await,
             _ => unimplemented!(),
         };
 

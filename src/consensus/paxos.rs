@@ -9,9 +9,7 @@ use crate::{
         Client, Request, Response,
     },
 };
-
 use std::{collections::HashMap, convert::TryInto, hash::Hasher};
-
 use tokio_sync::{mpsc, oneshot};
 use twox_hash::XxHash32;
 
@@ -100,10 +98,10 @@ impl Paxos {
 
         let (tx, rx) = oneshot::channel();
 
-        let request = Request::new(tx, kind);
+        let request = Request::new(None, kind);
 
-        // self.client.send((request, tx));
-        rx.await.map_err(|_| Error::new_broken_pipe(None))?;
+        self.client.send((request, tx));
+        // rx.await.map_err(|_| Error::new_broken_pipe(None))?;
 
         Ok(())
     }
@@ -138,7 +136,7 @@ impl Paxos {
         }));
 
         let (tx, rx) = oneshot::channel();
-        let request = Request::new(tx, kind);
+        let request = Request::new(None, kind);
 
         // self.client.send((request, tx));
         rx.await.map_err(|_| Error::new_broken_pipe(None))?;
@@ -182,7 +180,7 @@ impl Paxos {
                 }));
                 let (tx, rx) = oneshot::channel();
 
-                let request = Request::new(tx, kind);
+                let request = Request::new(None, kind);
 
                 // self.client.send((request, tx));
                 rx.await.map_err(|_| Error::new_broken_pipe(None))?;
@@ -219,7 +217,7 @@ impl Paxos {
 
             let (tx, rx) = oneshot::channel();
 
-            let request = Request::new(tx, kind);
+            let request = Request::new(None, kind);
 
             // self.client.send((request, tx));
             rx.await.map_err(|_| Error::new_broken_pipe(None))?;

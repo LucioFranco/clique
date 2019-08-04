@@ -86,7 +86,13 @@ impl FastPaxos {
             }
         };
         
-        scheduler.push(Box::pin(paxos_delay));
+        scheduler.push(Box::pin(task));
+
+        // Make sure to cancel the previous task if it's present. There is always only one instance
+        // of a classic paxos round
+        if let Some(cancel) = self.cancel_tx.replace(tx) {
+            cancel.send(());
+        }
 
         let kind = proto::RequestKind::Consensus(proto::Consensus::FastRoundPhase2bMessage(
             proto::FastRoundPhase2bMessage {
@@ -115,9 +121,8 @@ impl FastPaxos {
     pub async fn handle_message(&mut self, msg: Consensus) -> Result<Response> {
         match msg {
             FastRoundPhase2bMessage(req) => self.handle_fast_round(&req).await,
-
             _ => unimplemented!(),
-        }
+        };
 
         Ok(Response::consensus())
     }

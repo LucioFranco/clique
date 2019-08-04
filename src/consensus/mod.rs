@@ -8,7 +8,7 @@ use crate::{
         Client, Request, Response,
     },
 };
-use futures::FutureExt;
+use futures::{future::Fuse, FutureExt};
 use rand::Rng;
 use std::{
     collections::{HashMap, HashSet},
@@ -37,10 +37,11 @@ pub struct FastPaxos {
     my_addr: Endpoint,
     size: usize,
     decided: AtomicBool,
-    paxos: Option<Paxos>,
+    paxos: Paxos,
     config_id: ConfigId,
     votes_received: HashSet<Endpoint>, // should be a bitset?
     votes_per_proposal: HashMap<Vec<Endpoint>, usize>,
+    cancel_tx: Option<oneshot::Sender<()>>,
 }
 
 impl FastPaxos {
@@ -48,7 +49,6 @@ impl FastPaxos {
         my_addr: Endpoint,
         size: usize,
         client: Client,
-        broadcast: mpsc::Sender<(Request, oneshot::Sender<Response>)>,
         config_id: ConfigId,
     ) -> FastPaxos {
         FastPaxos {
@@ -57,9 +57,10 @@ impl FastPaxos {
             size: size,
             my_addr: my_addr.clone(),
             decided: AtomicBool::new(false),
-            paxos: Some(Paxos::new(client, size, my_addr, config_id)),
+            paxos: Paxos::new(client, size, my_addr, config_id),
             votes_received: HashSet::default(),
             votes_per_proposal: HashMap::default(),
+            cancel_tx: None,
         }
     }
 
@@ -73,9 +74,18 @@ impl FastPaxos {
         proposal: Vec<Endpoint>,
         scheduler: &mut Scheduler,
     ) -> Result<()> {
-        let paxos_delay = Delay::new(Instant::now() + self.get_random_delay())
-            .map(|_| SchedulerEvents::StartClassicRound);
+        let mut paxos_delay = Delay::new(Instant::now() + self.get_random_delay()).fuse();
 
+        let (tx, cancel_rx) = oneshot::channel();
+        let mut cancel_rx = cancel_rx.fuse();
+
+        let task = async move {
+            futures::select! {
+                _ = cancel_rx => SchedulerEvents::None,
+                _ = paxos_delay => SchedulerEvents::StartClassicRound,
+            }
+        };
+        
         scheduler.push(Box::pin(paxos_delay));
 
         let kind = proto::RequestKind::Consensus(proto::Consensus::FastRoundPhase2bMessage(
@@ -104,11 +114,8 @@ impl FastPaxos {
     /// * `FastRoundFailure`: If fast paxos is unable to reach consensus
     pub async fn handle_message(&mut self, msg: Consensus) -> Result<Response> {
         match msg {
-            FastRoundPhase2bMessage(req) => {
-                if self.paxos.is_some() {
-                    self.handle_fast_round(&req).await;
-                }
-            }
+            FastRoundPhase2bMessage(req) => self.handle_fast_round(&req).await,
+
             _ => unimplemented!(),
         }
 
@@ -154,10 +161,8 @@ impl FastPaxos {
         // This is the only place where the value is set to `true`.
         self.decided.store(true, Ordering::SeqCst);
 
-        let paxos_instance = self.paxos.take();
-
-        if let Some(instance) = paxos_instance {
-            drop(instance);
+        if let Some(cancel_tx) = self.cancel_tx.take() {
+            cancel_tx.send(());
         }
 
         // TODO: surface decision to membership
@@ -166,10 +171,8 @@ impl FastPaxos {
 
     pub async fn start_classic_round(&mut self) -> Result<()> {
         if !self.decided.load(Ordering::SeqCst) {
-            if let Some(paxos) = &mut self.paxos {
-                // The java impl does this..
-                paxos.start_phase_1a(2).await?;
-            }
+            // The java impl does this..
+            self.paxos.start_phase_1a(2).await?;
         }
         Ok(())
     }

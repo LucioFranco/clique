@@ -9,9 +9,7 @@ use crate::{
         Client, Request, Response,
     },
 };
-
 use std::{collections::HashMap, convert::TryInto, hash::Hasher};
-
 use tokio_sync::{mpsc, oneshot};
 use twox_hash::XxHash32;
 

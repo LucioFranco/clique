@@ -5,7 +5,7 @@ use crate::{
     error::{Error, Result},
     transport::{
         proto::{self, Consensus, Consensus::*, RequestKind::*},
-        Broadcast, Client, Request, Response,
+        Client, Request, Response,
     },
 };
 use futures::FutureExt;
@@ -33,7 +33,7 @@ const BASE_DELAY: u64 = 1000;
 /// multiple nodes do not start their own instances of paxos as coordinators.
 #[derive(Debug)]
 pub struct FastPaxos {
-    broadcast: mpsc::Sender<(Request, oneshot::Sender<Response>)>,
+    client: Client,
     my_addr: Endpoint,
     size: usize,
     decided: AtomicBool,
@@ -47,12 +47,12 @@ impl FastPaxos {
     pub fn new(
         my_addr: Endpoint,
         size: usize,
-        client: mpsc::Sender<(Request, oneshot::Sender<Response>)>,
+        client: Client,
         broadcast: mpsc::Sender<(Request, oneshot::Sender<Response>)>,
         config_id: ConfigId,
     ) -> FastPaxos {
         FastPaxos {
-            broadcast,
+            client: client.clone(),
             config_id,
             size: size,
             my_addr: my_addr.clone(),
@@ -77,17 +77,16 @@ impl FastPaxos {
             .map(|_| SchedulerEvents::StartClassicRound);
 
         scheduler.push(Box::pin(paxos_delay));
-        // let async {
-        //     paxos_delay.await;
-        //     self.start_classic_round().await;
-        // };
 
-        let (tx, rx) = oneshot::channel();
+        let kind = proto::RequestKind::Consensus(proto::Consensus::FastRoundPhase2bMessage(
+            proto::FastRoundPhase2bMessage {
+                sender: self.my_addr.clone(),
+                config_id: self.config_id,
+                endpoints: proposal,
+            },
+        ));
 
-        let request = Request::new_fast_round(tx, self.my_addr.clone(), self.config_id, proposal);
-
-        // self.broadcast.send((request, tx));
-        rx.await.map_err(|_| Error::new_broken_pipe(None))?;
+        self.client.broadcast(kind);
 
         Ok(())
     }
@@ -103,21 +102,17 @@ impl FastPaxos {
     /// * `AlreadyReachedConsensus`: If this is called after the cluster has already reached
     /// consensus.
     /// * `FastRoundFailure`: If fast paxos is unable to reach consensus
-    pub async fn handle_message(
-        &mut self,
-        msg: Consensus,
-        res_tx: oneshot::Sender<Result<Response>>,
-    ) -> Result<()> {
+    pub async fn handle_message(&mut self, msg: Consensus) -> Result<Response> {
         match msg {
             FastRoundPhase2bMessage(req) => {
                 if self.paxos.is_some() {
-                    return self.handle_fast_round(&req).await;
+                    self.handle_fast_round(&req).await;
                 }
             }
             _ => unimplemented!(),
-        };
+        }
 
-        Ok(())
+        Ok(Response::consensus())
     }
 
     async fn handle_fast_round(

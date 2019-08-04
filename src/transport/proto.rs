@@ -15,7 +15,7 @@ pub enum ResponseKind {
     Join(JoinResponse),
     Response,
     Probe,
-    Consensus(Consensus),
+    Consensus,
 }
 
 #[derive(Debug, Clone)]

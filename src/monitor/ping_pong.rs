@@ -1,5 +1,5 @@
 use super::Monitor;
-use crate::{common::Endpoint, transport::Client};
+use crate::common::Endpoint;
 use futures::{future, FutureExt};
 use std::{
     future::Future,
@@ -11,16 +11,6 @@ use std::{
 };
 use tokio_sync::{mpsc, oneshot};
 use tokio_timer::{Delay, Timeout};
-
-pub trait Monitor2 {
-    type Future: Future<Output = ()> + Send + 'static;
-
-    fn monitor(
-        &mut self,
-        subject: Endpoint,
-        client: mpsc::Sender<oneshot::Sender<()>>,
-    ) -> Self::Future;
-}
 
 #[derive(Debug)]
 pub struct PingPong {

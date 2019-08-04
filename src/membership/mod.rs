@@ -35,29 +35,29 @@ impl<M: Monitor> Membership<M> {
         self.view.clone()
     }
 
-    pub async fn handle_message(&mut self, req: Request, scheduler: &mut Scheduler) -> Result<()> {
+    pub async fn handle_message(
+        &mut self,
+        request: Request,
+        scheduler: &mut Scheduler,
+    ) -> Result<Response> {
         use proto::RequestKind::*;
-        let (kind, res_tx) = req.into_parts();
+        let (_target, kind) = request.into_parts();
 
-        match kind {
-            PreJoin(msg) => self.handle_pre_join(msg, res_tx).await?,
-            Join(msg) => self.handle_join(msg, res_tx).await?,
-            Consensus(msg) => self.paxos.handle_message(msg, res_tx).await?,
+        let response = match kind {
+            PreJoin(msg) => self.handle_pre_join(msg).await?,
+            Join(msg) => self.handle_join(msg).await?,
+            Consensus(msg) => self.paxos.handle_message(msg).await?,
             _ => unimplemented!(),
-        }
+        };
 
-        Ok(())
+        Ok(response)
     }
 
     pub async fn start_classic_round(&mut self) -> Result<()> {
         self.paxos.start_classic_round().await
     }
 
-    pub async fn handle_pre_join(
-        &mut self,
-        msg: PreJoinMessage,
-        res_tx: oneshot::Sender<Result<Response>>,
-    ) -> Result<()> {
+    pub async fn handle_pre_join(&mut self, msg: PreJoinMessage) -> Result<Response> {
         let PreJoinMessage {
             sender,
             node_id,
@@ -92,18 +92,10 @@ impl<M: Monitor> Membership<M> {
             size = %self.view.get_membership_size()
         );
 
-        let res = Response::new_join(join_res);
-
-        res_tx
-            .send(Ok(res))
-            .map_err(|_| Error::new_broken_pipe(None))
+        Ok(Response::new_join(join_res))
     }
 
-    pub async fn handle_join(
-        &mut self,
-        msg: JoinMessage,
-        res_tx: oneshot::Sender<Result<Response>>,
-    ) -> Result<()> {
+    pub async fn handle_join(&mut self, msg: JoinMessage) -> Result<Response> {
         let current_config_id = self.view.get_config().config_id();
 
         if msg.config_id == current_config_id {
@@ -128,16 +120,14 @@ impl<M: Monitor> Membership<M> {
                 unimplemented!()
             };
 
-            res_tx
-                .send(Ok(Response::new_join(response)))
-                .map_err(|_| Error::new_broken_pipe(None))
+            Ok(Response::new_join(response))
         }
     }
 
     pub fn create_failure_detectors(
         &mut self,
         scheduler: &mut Scheduler,
-        client: mpsc::Sender<(Request, oneshot::Sender<Response>)>,
+        client: Client,
     ) -> Result<()> {
         for subject in self.view.get_subjects(&self.host_addr)? {
             let (tx, rx) = tokio_sync::mpsc::channel(100);

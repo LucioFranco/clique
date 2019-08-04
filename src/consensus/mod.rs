@@ -45,12 +45,7 @@ pub struct FastPaxos {
 }
 
 impl FastPaxos {
-    pub fn new(
-        my_addr: Endpoint,
-        size: usize,
-        client: Client,
-        config_id: ConfigId,
-    ) -> FastPaxos {
+    pub fn new(my_addr: Endpoint, size: usize, client: Client, config_id: ConfigId) -> FastPaxos {
         FastPaxos {
             client: client.clone(),
             config_id,
@@ -85,7 +80,7 @@ impl FastPaxos {
                 _ = paxos_delay => SchedulerEvents::StartClassicRound,
             }
         };
-        
+
         scheduler.push(Box::pin(task));
 
         // Make sure to cancel the previous task if it's present. There is always only one instance

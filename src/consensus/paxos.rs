@@ -16,7 +16,7 @@ use twox_hash::XxHash32;
 #[derive(Debug)]
 pub struct Paxos {
     // TODO: come up with a design for onDecide
-    client: mpsc::Sender<(Request, oneshot::Sender<Response>)>,
+    client: Client,
     size: usize,
     my_addr: Endpoint,
     /// Highest-numbered round we have participated in
@@ -37,12 +37,7 @@ pub struct Paxos {
 }
 
 impl Paxos {
-    pub fn new(
-        client: mpsc::Sender<(Request, oneshot::Sender<Response>)>,
-        size: usize,
-        my_addr: Endpoint,
-        config_id: ConfigId,
-    ) -> Paxos {
+    pub fn new(client: Client, size: usize, my_addr: Endpoint, config_id: ConfigId) -> Paxos {
         Paxos {
             client,
             size,
@@ -96,12 +91,7 @@ impl Paxos {
             rank: self.crnd,
         }));
 
-        let (tx, rx) = oneshot::channel();
-
-        let request = Request::new(None, kind);
-
-        self.client.send((request, tx));
-        // rx.await.map_err(|_| Error::new_broken_pipe(None))?;
+        self.client.broadcast(kind).await?;
 
         Ok(())
     }
@@ -135,11 +125,8 @@ impl Paxos {
             vval: self.vval.clone(),
         }));
 
-        let (tx, rx) = oneshot::channel();
-        let request = Request::new(None, kind);
-
-        // self.client.send((request, tx));
-        rx.await.map_err(|_| Error::new_broken_pipe(None))?;
+        // TODO: figure this out
+        // self.client.send(sender, kind).await?;
 
         Ok(())
     }
@@ -178,12 +165,8 @@ impl Paxos {
                     rnd: self.crnd,
                     vval: chosen_proposal,
                 }));
-                let (tx, rx) = oneshot::channel();
 
-                let request = Request::new(None, kind);
-
-                // self.client.send((request, tx));
-                rx.await.map_err(|_| Error::new_broken_pipe(None))?;
+                self.client.broadcast(kind);
             }
         }
 
@@ -215,12 +198,7 @@ impl Paxos {
                 endpoints: vval,
             }));
 
-            let (tx, rx) = oneshot::channel();
-
-            let request = Request::new(None, kind);
-
-            // self.client.send((request, tx));
-            rx.await.map_err(|_| Error::new_broken_pipe(None))?;
+            self.client.broadcast(kind);
         }
 
         Ok(())

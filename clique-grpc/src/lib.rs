@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use clique::transport::{proto::RequestKind, Response};
 use std::{error, fmt};
 
@@ -6,11 +8,10 @@ mod proto {
     include!(concat!(env!("OUT_DIR"), "/clique.rs"));
 }
 
-mod client;
 mod server;
+mod transport;
 
-pub use client::GrpcClient;
-pub use server::GrpcServer;
+pub use transport::GrpcTransport;
 
 #[derive(Debug)]
 // TODO: add actual errors here!

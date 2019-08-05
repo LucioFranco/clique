@@ -5,7 +5,7 @@ use crate::{
     error::{Error, Result},
     transport::{
         proto::{self, Consensus, Consensus::*, RequestKind::*},
-        Broadcast, Client, Request, Response,
+        Client, Request, Response,
     },
 };
 use futures::{future::Fuse, FutureExt};
@@ -33,7 +33,7 @@ const BASE_DELAY: u64 = 1000;
 /// multiple nodes do not start their own instances of paxos as coordinators.
 #[derive(Debug)]
 pub struct FastPaxos {
-    broadcast: mpsc::Sender<Request>,
+    client: Client,
     my_addr: Endpoint,
     size: usize,
     decided: AtomicBool,
@@ -45,15 +45,9 @@ pub struct FastPaxos {
 }
 
 impl FastPaxos {
-    pub fn new(
-        my_addr: Endpoint,
-        size: usize,
-        client: mpsc::Sender<(Request, oneshot::Sender<Response>)>,
-        broadcast: mpsc::Sender<Request>,
-        config_id: ConfigId,
-    ) -> FastPaxos {
+    pub fn new(my_addr: Endpoint, size: usize, client: Client, config_id: ConfigId) -> FastPaxos {
         FastPaxos {
-            broadcast,
+            client: client.clone(),
             config_id,
             size: size,
             my_addr: my_addr.clone(),
@@ -95,9 +89,15 @@ impl FastPaxos {
             cancel.send(());
         }
 
-        let request = Request::new_fast_round(None, self.my_addr.clone(), self.config_id, proposal);
+        let kind = proto::RequestKind::Consensus(proto::Consensus::FastRoundPhase2bMessage(
+            proto::FastRoundPhase2bMessage {
+                sender: self.my_addr.clone(),
+                config_id: self.config_id,
+                endpoints: proposal,
+            },
+        ));
 
-        self.broadcast.send(request);
+        self.client.broadcast(kind);
 
         Ok(())
     }
@@ -113,17 +113,13 @@ impl FastPaxos {
     /// * `AlreadyReachedConsensus`: If this is called after the cluster has already reached
     /// consensus.
     /// * `FastRoundFailure`: If fast paxos is unable to reach consensus
-    pub async fn handle_message(
-        &mut self,
-        msg: Consensus,
-        res_tx: oneshot::Sender<Result<Response>>,
-    ) -> Result<()> {
+    pub async fn handle_message(&mut self, msg: Consensus) -> Result<Response> {
         match msg {
             FastRoundPhase2bMessage(req) => self.handle_fast_round(&req).await,
             _ => unimplemented!(),
         };
 
-        Ok(())
+        Ok(Response::consensus())
     }
 
     async fn handle_fast_round(

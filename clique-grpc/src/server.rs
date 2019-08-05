@@ -2,10 +2,10 @@ use crate::{
     proto::{self, server},
     Error,
 };
-use clique::transport::{Request, Server};
+use clique::transport::{Request, Response};
 use futures::sync::oneshot as oneshot01;
 use futures::{Future as Future01, Stream as Stream01};
-use futures03::{future, TryFutureExt};
+use futures03::TryFutureExt;
 use std::net::SocketAddr;
 use tokio_sync::{mpsc, oneshot};
 use tokio_tcp::TcpListener;
@@ -13,13 +13,16 @@ use tower_grpc::{Code, Status};
 use tower_hyper::server::Http;
 
 pub struct GrpcServer {
-    msg_rx: Option<mpsc::Receiver<Result<Request, Error>>>,
+    msg_rx: Option<
+        mpsc::Receiver<Result<(Request, oneshot::Sender<Result<Response, clique::Error>>), Error>>,
+    >,
     target_tx: Option<oneshot01::Sender<SocketAddr>>,
 }
 
 #[derive(Clone)]
 pub struct Svc {
-    msg_tx: mpsc::Sender<Result<Request, Error>>,
+    msg_tx:
+        mpsc::Sender<Result<(Request, oneshot::Sender<Result<Response, clique::Error>>), Error>>,
 }
 
 pub struct Background {
@@ -52,18 +55,14 @@ impl GrpcServer {
 
         (server, bg)
     }
-}
 
-impl Server<SocketAddr> for GrpcServer {
-    type Error = Error;
-    type Stream = mpsc::Receiver<Result<Request, Self::Error>>;
-    type Future = future::Ready<Result<Self::Stream, Self::Error>>;
-
-    fn start(&mut self, target: SocketAddr) -> Self::Future {
-        let tx = self.msg_rx.take().expect("called start twice");
+    pub fn create(
+        &mut self,
+        target: SocketAddr,
+    ) -> mpsc::Receiver<Result<(Request, oneshot::Sender<Result<Response, clique::Error>>), Error>>
+    {
         self.target_tx.take().unwrap().send(target).unwrap();
-
-        future::ready(Ok(tx))
+        self.msg_rx.take().unwrap()
     }
 }
 
@@ -79,10 +78,10 @@ impl server::MembershipService for Svc {
     ) -> Self::SendRequestFuture {
         let inbound_req = request.into_inner();
         let (res_tx, res_rx) = oneshot::channel();
-        let req = Request::new(Some(res_tx), inbound_req.into());
+        let req = Request::new("someendpoint".into(), inbound_req.into());
 
         // TODO: poll_ready first find way to
-        self.msg_tx.try_send(Ok(req)).unwrap();
+        self.msg_tx.try_send(Ok((req, res_tx))).unwrap();
 
         Box::new(
             res_rx

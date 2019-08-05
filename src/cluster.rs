@@ -3,7 +3,7 @@ use crate::{
     error::{Error, Result},
     membership::Membership,
     monitor::{ping_pong, Monitor},
-    transport::{Client, Request, Response, Server},
+    transport::{Client, Request, Response, Transport},
 };
 use futures::{Stream, StreamExt};
 use std::{
@@ -17,11 +17,10 @@ use tokio_timer::Interval;
 #[derive(Debug, Default, Clone)]
 pub struct Event;
 
-pub struct Cluster<S, C, T> {
+pub struct Cluster<T, Target> {
     membership: Membership<ping_pong::PingPong>,
-    server: S,
-    client: C,
-    listen_target: T,
+    transport: T,
+    listen_target: Target,
     event_tx: watch::Sender<Event>,
     handle: Handle,
     tasks: Scheduler,
@@ -32,21 +31,19 @@ pub struct Handle {
     event_rx: watch::Receiver<Event>,
 }
 
-impl<S, C, T> Cluster<S, C, T>
+impl<T, Target> Cluster<T, Target>
 where
-    S: Server<T>,
-    C: Client + Send + Clone,
-    T: Clone,
+    T: Transport<Target>,
+    Target: Clone,
 {
-    pub fn new(server: S, client: C, listen_target: T) -> Self {
+    pub fn new(transport: T, listen_target: Target) -> Self {
         let (event_tx, event_rx) = watch::channel(Event::default());
 
         let handle = Handle { event_rx };
 
         Self {
             membership: Membership::new(),
-            client,
-            server,
+            transport,
             listen_target,
             event_tx,
             handle,
@@ -60,26 +57,28 @@ where
 
     pub async fn start(&mut self) -> Result<()> {
         let mut server = self
-            .server
-            .start(self.listen_target.clone())
+            .transport
+            .listen_on(self.listen_target.clone())
             .await
             .unwrap()
             .fuse();
 
         let (client_tx, mut client_rx) = mpsc::channel(1000);
         let mut client_rx = client_rx.fuse();
+        let client = Client::new(client_tx);
 
         self.membership
-            .create_failure_detectors(&mut self.tasks, client_tx.clone());
+            .create_failure_detectors(&mut self.tasks, client.clone());
 
         let mut alert_batcher_interval = Interval::new_interval(Duration::from_millis(100)).fuse();
         let mut scheduler = Scheduler::new();
 
         loop {
             futures::select! {
-                request = server.next() => {
-                    if let Some(Ok(request)) = request {
-                        self.membership.handle_message(request, &mut scheduler).await;
+                request = server.select_next_some() => {
+                    if let Ok((request, response_tx)) = request {
+                        let response = self.membership.handle_message(request, &mut scheduler).await;
+                        response_tx.send(response);
                     } else {
                         return Err(Error::new_join(None))
                     }
@@ -94,25 +93,32 @@ where
                         _ => unimplemented!()
                     }
                 },
-                item = client_rx.next() => {
-                    match item {
-                        Some((req, tx)) => self.handle_client_request(req, tx).await,
-                        None => eprintln!("Client stream closed")
-                    }
-
+                (request, tx) = client_rx.select_next_some() => {
+                    self.handle_client_request(request, tx).await
                 },
-                _ = alert_batcher_interval.next() => {
+                _ = alert_batcher_interval.select_next_some() => {
                     self.membership.drain_alerts();
                 },
+                // TODO: merge this with scheduler
                 res = self.tasks.next() => {
                 },
             };
         }
     }
 
-    async fn handle_client_request(&mut self, request: Request, tx: oneshot::Sender<Response>) {
-        let response = self.client.call(request).await.unwrap();
-        tx.send(response).unwrap();
+    async fn handle_client_request(
+        &mut self,
+        request: Request,
+        tx: oneshot::Sender<crate::Result<Response>>,
+    ) {
+        let response = self
+            .transport
+            .send(request)
+            .await
+            .map_err(|e| Error::new_broken_pipe(Some(Box::new(e))));
+
+        // We can ingore this error, the response will just be lost in the void
+        let _ = tx.send(response);
     }
 }
 

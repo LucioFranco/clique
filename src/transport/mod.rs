@@ -1,4 +1,7 @@
+mod client;
 pub mod proto;
+
+pub use self::client::Client;
 
 use crate::{
     common::{ConfigId, Endpoint},
@@ -8,32 +11,30 @@ use futures::Stream;
 use std::future::Future;
 use tokio_sync::oneshot;
 
-pub trait Client {
-    type Error: std::error::Error;
-    type Future: Future<Output = Result<Response, Self::Error>> + Send;
+pub trait Transport<T> {
+    type Error: std::error::Error + Send + 'static;
 
-    fn call(&mut self, req: Request) -> Self::Future;
-}
+    type ClientFuture: Future<Output = Result<Response, Self::Error>> + Send;
 
-pub trait Server<T> {
-    type Error: std::error::Error;
-    type Stream: Stream<Item = Result<Request, Self::Error>> + Unpin;
-    type Future: Future<Output = Result<Self::Stream, Self::Error>>;
+    fn send(&mut self, req: Request) -> Self::ClientFuture;
 
-    fn start(&mut self, target: T) -> Self::Future;
-}
+    type ServerStream: Stream<
+            Item = Result<(Request, oneshot::Sender<crate::Result<Response>>), Self::Error>,
+        > + Unpin;
+    type ServerFuture: Future<Output = Result<Self::ServerStream, Self::Error>>;
 
-pub trait Broadcast {
-    type Error: std::error::Error;
-    type Future: Future<Output = Vec<Result<Response, Self::Error>>>;
-
-    fn broadcast(&mut self, req: Request) -> Self::Future;
+    fn listen_on(&mut self, bind: T) -> Self::ServerFuture;
 }
 
 #[derive(Debug)]
 pub struct Request {
+    target: Endpoint,
     kind: proto::RequestKind,
-    res_tx: Option<oneshot::Sender<crate::Result<Response>>>,
+}
+
+pub struct InboundRequest {
+    request: Request,
+    response_tx: oneshot::Sender<crate::Result<Response>>,
 }
 
 #[derive(Debug)]
@@ -42,54 +43,38 @@ pub struct Response {
 }
 
 impl Request {
-    pub fn new(
-        res_tx: Option<oneshot::Sender<crate::Result<Response>>>,
-        kind: proto::RequestKind,
-    ) -> Self {
-        Self { res_tx, kind }
+    pub fn new(target: Endpoint, kind: proto::RequestKind) -> Self {
+        Self { target, kind }
     }
 
     pub fn into_inner(self) -> proto::RequestKind {
         self.kind
     }
 
-    pub fn respond(self, res: Response) -> crate::Result<()> {
-        self.res_tx
-            // TODO: clean up this unwrap
-            .unwrap()
-            .send(Ok(res))
-            // TODO: prob should be transport dropped
-            .map_err(|_| Error::new_broken_pipe(None))
-    }
-
     pub fn kind(&self) -> &proto::RequestKind {
         &self.kind
     }
 
-    pub fn into_parts(self) -> (proto::RequestKind, oneshot::Sender<crate::Result<Response>>) {
-        (self.kind, self.res_tx.unwrap())
-    }
-
-    pub fn new_fast_round(
-        res_tx: Option<oneshot::Sender<crate::Result<Response>>>,
-        sender: Endpoint,
-        config_id: ConfigId,
-        endpoints: Vec<Endpoint>,
-    ) -> Self {
-        let kind = proto::RequestKind::Consensus(proto::Consensus::FastRoundPhase2bMessage(
-            proto::FastRoundPhase2bMessage {
-                sender: sender,
-                config_id: config_id,
-                endpoints: endpoints,
-            },
-        ));
-        Self { res_tx, kind }
+    pub fn into_parts(self) -> (Endpoint, proto::RequestKind) {
+        (self.target, self.kind)
     }
 }
 
 impl Response {
     pub fn new(kind: proto::ResponseKind) -> Self {
         Self { kind }
+    }
+
+    pub fn empty() -> Self {
+        Self {
+            kind: proto::ResponseKind::Response,
+        }
+    }
+
+    pub fn consensus() -> Self {
+        Self {
+            kind: proto::ResponseKind::Consensus,
+        }
     }
 
     pub fn new_join(join: proto::JoinResponse) -> Self {

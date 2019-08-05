@@ -125,8 +125,7 @@ impl Paxos {
             vval: self.vval.clone(),
         }));
 
-        // TODO: figure this out
-        // self.client.send(sender, kind).await?;
+        self.client.send_no_wait(sender, kind).await?;
 
         Ok(())
     }
@@ -192,8 +191,8 @@ impl Paxos {
             self.vval = vval.clone();
 
             let kind = RequestKind::Consensus(Consensus::Phase2bMessage(Phase2bMessage {
-                config_id: config_id,
-                rnd: rnd,
+                config_id,
+                rnd,
                 sender: self.my_addr.clone(),
                 endpoints: vval,
             }));

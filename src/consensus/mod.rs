@@ -49,7 +49,7 @@ impl FastPaxos {
         FastPaxos {
             client: client.clone(),
             config_id,
-            size: size,
+            size,
             my_addr: my_addr.clone(),
             decided: AtomicBool::new(false),
             paxos: Paxos::new(client, size, my_addr, config_id),

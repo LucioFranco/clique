@@ -54,7 +54,10 @@ impl Client {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::transport::{proto::{RequestKind, ResponseKind}, Response};
+    use crate::transport::{
+        proto::{RequestKind, ResponseKind},
+        Response,
+    };
     use futures::StreamExt;
     use tokio_sync::mpsc;
 
@@ -83,7 +86,10 @@ mod tests {
         let mut client = Client::new(tx);
 
         let req = RequestKind::Probe;
-        client.send_no_wait("some-addr".into(), req.clone()).await.unwrap();
+        client
+            .send_no_wait("some-addr".into(), req.clone())
+            .await
+            .unwrap();
 
         let (req, tx) = rx.next().await.unwrap();
         assert_eq!(req.kind(), &RequestKind::Probe);
@@ -92,5 +98,5 @@ mod tests {
         // ignore the error as the sender could be dropped.
         let res = Response::new(ResponseKind::Probe);
         let _ = tx.send(Ok(res));
-    }    
+    }
 }

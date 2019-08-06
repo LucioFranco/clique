@@ -31,8 +31,12 @@ impl<M: Monitor> Membership<M> {
         unimplemented!()
     }
 
-    pub fn view(&self) -> View {
-        self.view.clone()
+    pub fn view(&self) -> Vec<&Endpoint> {
+        self.view
+            .get_ring(0)
+            .expect("There is always a ring!")
+            .iter()
+            .collect()
     }
 
     pub async fn handle_message(

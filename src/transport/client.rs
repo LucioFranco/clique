@@ -107,7 +107,7 @@ mod tests {
                 RequestType::Unary(req, tx) => { 
                     assert_eq!(req.kind(), &RequestKind::Probe);
 
-                        // This simulates what the server does when it tries to send, it may
+        // This simulates what the server does when it tries to send, it may
         // ignore the error as the sender could be dropped.
         let res = Response::new(ResponseKind::Probe);
         let _ = tx.send(Ok(res));

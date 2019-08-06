@@ -80,13 +80,13 @@ mod tests {
 
         tokio::spawn(async move {
             match rx.next().await.unwrap() {
-                RequestType::Unary(req, tx) => { 
+                RequestType::Unary(req, tx) => {
                     let res = Response::new(ResponseKind::Probe);
 
                     tx.send(Ok(res)).unwrap();
-                },
+                }
                 _ => panic!("wrong request type"),
-            }                
+            }
         });
 
         let req = RequestKind::Probe;
@@ -103,19 +103,17 @@ mod tests {
             .await
             .unwrap();
 
-            match rx.next().await.unwrap() {
-                RequestType::Unary(req, tx) => { 
-                    assert_eq!(req.kind(), &RequestKind::Probe);
+        match rx.next().await.unwrap() {
+            RequestType::Unary(req, tx) => {
+                assert_eq!(req.kind(), &RequestKind::Probe);
 
-        // This simulates what the server does when it tries to send, it may
-        // ignore the error as the sender could be dropped.
-        let res = Response::new(ResponseKind::Probe);
-        let _ = tx.send(Ok(res));
-                },
-                _ => panic!("wrong request type"),
-            }                    
-
-        
+                // This simulates what the server does when it tries to send, it may
+                // ignore the error as the sender could be dropped.
+                let res = Response::new(ResponseKind::Probe);
+                let _ = tx.send(Ok(res));
+            }
+            _ => panic!("wrong request type"),
+        }
     }
 
     #[tokio::test]
@@ -127,8 +125,7 @@ mod tests {
 
         match rx.next().await.unwrap() {
             RequestType::Broadcast(req) => assert_eq!(req, RequestKind::Probe),
-            _ => panic!("wrong request type")
-        }
-        ;
+            _ => panic!("wrong request type"),
+        };
     }
 }

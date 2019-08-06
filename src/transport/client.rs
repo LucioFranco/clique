@@ -6,22 +6,24 @@ use crate::{
 use tokio_sync::{mpsc, oneshot};
 
 pub type Channel = mpsc::Sender<(Request, oneshot::Sender<crate::Result<Response>>)>;
+pub type Broadcast = mpsc::Sender<RequestKind>;
 
 #[derive(Debug, Clone)]
 pub struct Client {
-    inner: Channel,
+    channel: Channel,
+    broadcast: Broadcast,
 }
 
 impl Client {
-    pub fn new(inner: Channel) -> Self {
-        Self { inner }
+    pub fn new(channel: Channel, broadcast: Broadcast) -> Self {
+        Self { channel, broadcast }
     }
 
     pub async fn send(&mut self, target: Endpoint, req: RequestKind) -> Result<Response> {
         let (tx, rx) = oneshot::channel();
         let req = Request::new(target, req);
 
-        self.inner
+        self.channel
             .send((req, tx))
             .await
             .map_err(|_| Error::new_broken_pipe(None))?;
@@ -35,7 +37,7 @@ impl Client {
         let (tx, rx) = oneshot::channel();
         let req = Request::new(target, req);
 
-        self.inner
+        self.channel
             .send((req, tx))
             .await
             .map_err(|_| Error::new_broken_pipe(None))?;
@@ -47,7 +49,10 @@ impl Client {
     }
 
     pub async fn broadcast(&mut self, req: RequestKind) -> Result<()> {
-        unimplemented!()
+        self.broadcast
+            .send(req)
+            .await
+            .map_err(|_| Error::new_broken_pipe(None))
     }
 }
 
@@ -64,8 +69,9 @@ mod tests {
     #[tokio::test]
     async fn send() {
         let (tx, mut rx) = mpsc::channel(100);
+        let (tx1, _rx) = mpsc::channel(100);
 
-        let mut client = Client::new(tx);
+        let mut client = Client::new(tx, tx1);
 
         tokio::spawn(async move {
             let (req, tx) = rx.next().await.unwrap();
@@ -82,8 +88,9 @@ mod tests {
     #[tokio::test]
     async fn send_no_wait() {
         let (tx, mut rx) = mpsc::channel(100);
+        let (tx1, _rx) = mpsc::channel(100);
 
-        let mut client = Client::new(tx);
+        let mut client = Client::new(tx, tx1);
 
         let req = RequestKind::Probe;
         client
@@ -98,5 +105,19 @@ mod tests {
         // ignore the error as the sender could be dropped.
         let res = Response::new(ResponseKind::Probe);
         let _ = tx.send(Ok(res));
+    }
+
+    #[tokio::test]
+    async fn broadcast() {
+        let (tx, rx) = mpsc::channel(100);
+        let (tx1, mut rx) = mpsc::channel(100);
+
+        let mut client = Client::new(tx, tx1);
+
+        let req = RequestKind::Probe;
+        client.broadcast(req.clone()).await.unwrap();
+
+        let req = rx.next().await.unwrap();
+        assert_eq!(req, RequestKind::Probe);
     }
 }

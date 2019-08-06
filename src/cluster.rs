@@ -5,7 +5,7 @@ use crate::{
     monitor::{ping_pong, Monitor},
     transport::{Client, Request, Response, Transport},
 };
-use futures::{Stream, StreamExt};
+use futures::{FutureExt, Stream, StreamExt};
 use std::{
     pin::Pin,
     task::{Context, Poll},
@@ -33,8 +33,8 @@ pub struct Handle {
 
 impl<T, Target> Cluster<T, Target>
 where
-    T: Transport<Target>,
-    Target: Clone,
+    T: Transport<Target> + Send,
+    Target: Send + Clone,
 {
     pub fn new(transport: T, listen_target: Target) -> Self {
         let (event_tx, event_rx) = watch::channel(Event::default());
@@ -63,15 +63,18 @@ where
             .unwrap()
             .fuse();
 
+        let mut scheduler = Scheduler::new();
+
         let (client_tx, mut client_rx) = mpsc::channel(1000);
         let mut client_rx = client_rx.fuse();
-        let client = Client::new(client_tx);
+        let (broadcast_tx, broadcast_rx) = mpsc::channel(1000);
+        let mut broadcast_rx = broadcast_rx.fuse();
+        let client = Client::new(client_tx, broadcast_tx);
 
         self.membership
-            .create_failure_detectors(&mut self.tasks, client.clone());
+            .create_failure_detectors(&mut scheduler, client.clone());
 
         let mut alert_batcher_interval = Interval::new_interval(Duration::from_millis(100)).fuse();
-        let mut scheduler = Scheduler::new();
 
         loop {
             futures::select! {
@@ -94,31 +97,26 @@ where
                     }
                 },
                 (request, tx) = client_rx.select_next_some() => {
-                    self.handle_client_request(request, tx).await
+                    let task = self
+                        .transport
+                        .send(request)
+                        .map(|res| tx.send(res.map_err(|_| Error::new_broken_pipe(None))))
+                        .map(drop);
+                    scheduler.push(Box::pin(task.map(|_| SchedulerEvents::None)));
+                },
+                request = broadcast_rx.select_next_some() => {
+                    let view = self.membership.view();
+
+                    for endpoint in view {
+                        let task = self.transport.send(Request::new(endpoint.clone(), request.clone()));
+                        scheduler.push(Box::pin(task.map(|_| SchedulerEvents::None)));
+                    }
                 },
                 _ = alert_batcher_interval.select_next_some() => {
                     self.membership.drain_alerts();
                 },
-                // TODO: merge this with scheduler
-                res = self.tasks.next() => {
-                },
             };
         }
-    }
-
-    async fn handle_client_request(
-        &mut self,
-        request: Request,
-        tx: oneshot::Sender<crate::Result<Response>>,
-    ) {
-        let response = self
-            .transport
-            .send(request)
-            .await
-            .map_err(|e| Error::new_broken_pipe(Some(Box::new(e))));
-
-        // We can ingore this error, the response will just be lost in the void
-        let _ = tx.send(response);
     }
 }
 

@@ -14,7 +14,7 @@ use tokio_sync::oneshot;
 pub trait Transport<T> {
     type Error: std::error::Error + Send + 'static;
 
-    type ClientFuture: Future<Output = Result<Response, Self::Error>> + Send;
+    type ClientFuture: Future<Output = Result<Response, Self::Error>> + Send + 'static;
 
     fn send(&mut self, req: Request) -> Self::ClientFuture;
 

@@ -23,5 +23,4 @@ rand = "0.7.0"
 tracing = "0.1"
 
 [dev-dependencies]
-tokio = { git = "https://github.com/tokio-rs/tokio" }
-# tokio-test = { git = "https://github.com/tokio-rs/tokio" }
+tokio = { git = "https://github.com/tokio-rs/tokio", features = ["rt-full"] }

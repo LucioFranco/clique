@@ -1,4 +1,4 @@
-mod client;
+pub mod client;
 pub mod proto;
 
 pub use self::client::Client;
@@ -20,7 +20,8 @@ pub trait Transport<T> {
 
     type ServerStream: Stream<
             Item = Result<(Request, oneshot::Sender<crate::Result<Response>>), Self::Error>,
-        > + Unpin;
+        > + Send
+        + Unpin;
     type ServerFuture: Future<Output = Result<Self::ServerStream, Self::Error>>;
 
     fn listen_on(&mut self, bind: T) -> Self::ServerFuture;

@@ -41,7 +41,7 @@ impl Transport<String> for GrpcTransport {
         Result<(Request, oneshot::Sender<Result<Response, clique::Error>>), Self::Error>,
     >;
 
-    fn listen_on(&mut self, bind: String) -> Self::ServerFuture {
+    fn listen_on(&mut self, bind: Self::Target) -> Self::ServerFuture {
         let addr = bind.parse::<SocketAddr>().unwrap();
         let tx = self.server.create(addr);
 

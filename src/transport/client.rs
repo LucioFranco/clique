@@ -3,28 +3,36 @@ use crate::{
     error::{Error, Result},
     transport::{proto::RequestKind, Request, Response},
 };
+use futures::{stream::Fuse, StreamExt};
 use tokio_sync::{mpsc, oneshot};
 
-pub type Channel = mpsc::Sender<(Request, oneshot::Sender<crate::Result<Response>>)>;
-pub type Broadcast = mpsc::Sender<RequestKind>;
+pub type RequestStream = Fuse<mpsc::Receiver<RequestType>>;
 
 #[derive(Debug, Clone)]
 pub struct Client {
-    channel: Channel,
-    broadcast: Broadcast,
+    inner: mpsc::Sender<RequestType>,
+}
+
+#[derive(Debug)]
+pub enum RequestType {
+    Unary(Request, oneshot::Sender<crate::Result<Response>>),
+    Broadcast(RequestKind),
 }
 
 impl Client {
-    pub fn new(channel: Channel, broadcast: Broadcast) -> Self {
-        Self { channel, broadcast }
+    pub fn new(bound: usize) -> (Self, RequestStream) {
+        let (inner, rx) = mpsc::channel(bound);
+        let me = Self { inner };
+
+        (me, rx.fuse())
     }
 
     pub async fn send(&mut self, target: Endpoint, req: RequestKind) -> Result<Response> {
         let (tx, rx) = oneshot::channel();
         let req = Request::new(target, req);
 
-        self.channel
-            .send((req, tx))
+        self.inner
+            .send(RequestType::Unary(req, tx))
             .await
             .map_err(|_| Error::new_broken_pipe(None))?;
 
@@ -37,8 +45,8 @@ impl Client {
         let (tx, rx) = oneshot::channel();
         let req = Request::new(target, req);
 
-        self.channel
-            .send((req, tx))
+        self.inner
+            .send(RequestType::Unary(req, tx))
             .await
             .map_err(|_| Error::new_broken_pipe(None))?;
 
@@ -49,8 +57,8 @@ impl Client {
     }
 
     pub async fn broadcast(&mut self, req: RequestKind) -> Result<()> {
-        self.broadcast
-            .send(req)
+        self.inner
+            .send(RequestType::Broadcast(req))
             .await
             .map_err(|_| Error::new_broken_pipe(None))
     }
@@ -68,17 +76,17 @@ mod tests {
 
     #[tokio::test]
     async fn send() {
-        let (tx, mut rx) = mpsc::channel(100);
-        let (tx1, _rx) = mpsc::channel(100);
-
-        let mut client = Client::new(tx, tx1);
+        let (mut client, mut rx) = Client::new(10);
 
         tokio::spawn(async move {
-            let (req, tx) = rx.next().await.unwrap();
+            match rx.next().await.unwrap() {
+                RequestType::Unary(req, tx) => { 
+                    let res = Response::new(ResponseKind::Probe);
 
-            let res = Response::new(ResponseKind::Probe);
-
-            tx.send(Ok(res)).unwrap();
+                    tx.send(Ok(res)).unwrap();
+                },
+                _ => panic!("wrong request type"),
+            }                
         });
 
         let req = RequestKind::Probe;
@@ -87,10 +95,7 @@ mod tests {
 
     #[tokio::test]
     async fn send_no_wait() {
-        let (tx, mut rx) = mpsc::channel(100);
-        let (tx1, _rx) = mpsc::channel(100);
-
-        let mut client = Client::new(tx, tx1);
+        let (mut client, mut rx) = Client::new(100);
 
         let req = RequestKind::Probe;
         client
@@ -98,26 +103,32 @@ mod tests {
             .await
             .unwrap();
 
-        let (req, tx) = rx.next().await.unwrap();
-        assert_eq!(req.kind(), &RequestKind::Probe);
+            match rx.next().await.unwrap() {
+                RequestType::Unary(req, tx) => { 
+                    assert_eq!(req.kind(), &RequestKind::Probe);
 
-        // This simulates what the server does when it tries to send, it may
+                        // This simulates what the server does when it tries to send, it may
         // ignore the error as the sender could be dropped.
         let res = Response::new(ResponseKind::Probe);
         let _ = tx.send(Ok(res));
+                },
+                _ => panic!("wrong request type"),
+            }                    
+
+        
     }
 
     #[tokio::test]
     async fn broadcast() {
-        let (tx, rx) = mpsc::channel(100);
-        let (tx1, mut rx) = mpsc::channel(100);
-
-        let mut client = Client::new(tx, tx1);
+        let (mut client, mut rx) = Client::new(100);
 
         let req = RequestKind::Probe;
         client.broadcast(req.clone()).await.unwrap();
 
-        let req = rx.next().await.unwrap();
-        assert_eq!(req, RequestKind::Probe);
+        match rx.next().await.unwrap() {
+            RequestType::Broadcast(req) => assert_eq!(req, RequestKind::Probe),
+            _ => panic!("wrong request type")
+        }
+        ;
     }
 }

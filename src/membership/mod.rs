@@ -65,8 +65,8 @@ impl<M: Monitor> Membership<M> {
         let PreJoinMessage {
             sender,
             node_id,
-            ring_number: _,
-            config_id: _,
+            // ring_number: _,
+            // config_id: _,
         } = msg;
 
         let status = self.view.is_safe_to_join(&sender, &node_id);

@@ -1,19 +1,19 @@
 use crate::{
     builder::Builder,
-    common::{Scheduler, SchedulerEvents},
+    common::{Endpoint, NodeId, Scheduler, SchedulerEvents},
     error::{Error, Result},
     event::Event,
     handle::Handle,
     membership::Membership,
     monitor::ping_pong,
-    transport::{client, Client, Request, Response, Transport},
+    transport::{client, proto, Client, Request, Response, Transport},
 };
 use futures::{
     future::{self, BoxFuture},
     stream::Fuse,
     FutureExt, StreamExt,
 };
-use std::time::Duration;
+use std::{collections::HashMap, time::Duration};
 use tokio_sync::{oneshot, watch};
 use tokio_timer::Interval;
 
@@ -37,7 +37,7 @@ where
 impl<T, Target> Cluster<T, Target>
 where
     T: Transport<Target> + Send,
-    Target: Send + Clone,
+    Target: Into<Endpoint> + Send + Clone,
 {
     pub fn builder() -> Builder<T, Target> {
         unimplemented!()
@@ -73,6 +73,9 @@ where
     #[allow(dead_code)]
     event_tx: watch::Sender<Event>,
 
+    endpoint: Endpoint,
+    node_id: NodeId,
+
     // TODO: might make sense to move this to the fn run since that seems to be the
     // only place we actually use it.
     scheduler: Scheduler,
@@ -85,7 +88,7 @@ where
 impl<T, Target> Inner<T, Target>
 where
     T: Transport<Target> + Send,
-    Target: Send + Clone,
+    Target: Into<Endpoint> + Send + Clone,
 {
     #![allow(dead_code)]
     async fn new(mut transport: T, listen_target: Target, event_tx: watch::Sender<Event>) -> Self {
@@ -93,11 +96,16 @@ where
 
         let (client, client_stream) = Client::new(100);
 
+        let endpoint = listen_target.clone().into();
+        let node_id = NodeId::new();
+
         Self {
             membership: Membership::new(),
             transport,
             listen_target,
             event_tx,
+            endpoint,
+            node_id,
             scheduler: Scheduler::new(),
             client,
             client_stream: client_stream.fuse(),
@@ -109,7 +117,12 @@ where
         self.run().await
     }
 
-    pub async fn join(&mut self, _seed_addr: Target) -> Result<()> {
+    pub async fn join(&mut self, seed_addr: Target) -> Result<()> {
+        for _ in 0..10 {
+            match self.join_attempt(seed_addr.into()).await {
+                _ => panic!(),
+            }
+        }
         Ok(())
     }
 
@@ -203,7 +216,101 @@ where
         }
     }
 
-    async fn join_attempt(&mut self, _seed_addr: Target) -> Result<Response> {
+    async fn join_attempt(&mut self, seed_addr: Endpoint) -> Result<()> {
+        let req = proto::RequestKind::PreJoin(proto::PreJoinMessage {
+            sender: self.endpoint.clone(),
+            node_id: self.node_id.clone(),
+        });
+
+        let join_res = match self
+            .transport
+            .send(Request::new(seed_addr, req))
+            .await
+            .map_err(|e| Error::new_broken_pipe(Some(Box::new(e))))?
+            .into_inner()
+        {
+            proto::ResponseKind::Join(res) => res,
+            _ => unimplemented!("wrong request type"),
+        };
+
+        if join_res.status != proto::JoinStatus::SafeToJoin
+            && join_res.status != proto::JoinStatus::HostnameAlreadyInRing
+        {
+            unimplemented!("JoinPhaseOneException");
+        }
+
+        let config_to_join = if join_res.status == proto::JoinStatus::HostnameAlreadyInRing {
+            -1
+        } else {
+            join_res.config_id
+        };
+
+        let res = self
+            .send_join_phase2(join_res)
+            .await?
+            .into_iter()
+            .filter_map(Result::ok)
+            .filter_map(|r| {
+                if let proto::ResponseKind::Join(res) = r.into_inner() {
+                    Some(res)
+                } else {
+                    None
+                }
+            })
+            .filter(|r| r.status == proto::JoinStatus::SafeToJoin)
+            .filter(|r| r.config_id != config_to_join)
+            .take(1)
+            .next();
+
+        if let Some(join) = res {
+            self.cluster_from_join(join).await
+        } else {
+            Err(Error::new_join_phase2())
+        }
+    }
+
+    async fn send_join_phase2(
+        &mut self,
+        join_res: proto::JoinResponse,
+    ) -> Result<Vec<Result<Response>>> {
+        let mut ring_num_per_obs = HashMap::new();
+
+        let mut ring_num = 0;
+        for obs in &join_res.endpoints {
+            ring_num_per_obs
+                .entry(obs)
+                .or_insert(Vec::new())
+                .push(ring_num);
+            ring_num += 1;
+        }
+
+        let mut in_flight_futs = Vec::new();
+
+        for (endpoint, ring_nums) in ring_num_per_obs {
+            let join = proto::RequestKind::Join(proto::JoinMessage {
+                sender: self.endpoint.clone(),
+                node_id: self.node_id.clone(),
+                ring_number: ring_nums,
+                config_id: join_res.config_id.clone(),
+            });
+
+            let fut = self.transport.send(Request::new(endpoint.clone(), join));
+            in_flight_futs.push(fut);
+        }
+
+        let responses = future::join_all(in_flight_futs)
+            .await
+            .into_iter()
+            .map(|r| match r {
+                Ok(r) => Ok(r),
+                Err(e) => Err(Error::new_broken_pipe(Some(Box::new(e)))),
+            })
+            .collect();
+
+        Ok(responses)
+    }
+
+    async fn cluster_from_join(&mut self, _join_res: proto::JoinResponse) -> Result<()> {
         unimplemented!()
     }
 }

@@ -29,7 +29,7 @@ mod tests {
     fn unpin() {
         fn assert_unpin<T: Unpin>(_: T) {}
 
-        let (tx, rx) = watch::channel(Event);
+        let (_tx, rx) = watch::channel(Event);
 
         assert_unpin(Handle { event_rx: rx });
     }

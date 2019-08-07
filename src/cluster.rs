@@ -5,20 +5,16 @@ use crate::{
     event::Event,
     handle::Handle,
     membership::Membership,
-    monitor::{ping_pong, Monitor},
+    monitor::ping_pong,
     transport::{client, Client, Request, Response, Transport},
 };
 use futures::{
     future::{self, BoxFuture},
     stream::Fuse,
-    FutureExt, Stream, StreamExt,
+    FutureExt, StreamExt,
 };
-use std::{
-    pin::Pin,
-    task::{Context, Poll},
-    time::{Duration, Instant},
-};
-use tokio_sync::{mpsc, oneshot, watch};
+use std::time::Duration;
+use tokio_sync::{oneshot, watch};
 use tokio_timer::Interval;
 
 pub struct Cluster<T, Target>
@@ -29,6 +25,7 @@ where
     inner: State<T, Target>,
 }
 
+#[allow(dead_code)]
 enum State<T, Target>
 where
     T: Transport<Target>,
@@ -71,7 +68,9 @@ where
 {
     membership: Membership<ping_pong::PingPong>,
     transport: T,
+    #[allow(dead_code)]
     listen_target: Target,
+    #[allow(dead_code)]
     event_tx: watch::Sender<Event>,
 
     // TODO: might make sense to move this to the fn run since that seems to be the
@@ -88,10 +87,11 @@ where
     T: Transport<Target> + Send,
     Target: Send + Clone,
 {
+    #![allow(dead_code)]
     async fn new(mut transport: T, listen_target: Target, event_tx: watch::Sender<Event>) -> Self {
         let server_stream = transport.listen_on(listen_target.clone()).await.unwrap();
 
-        let (client, mut client_stream) = Client::new(100);
+        let (client, client_stream) = Client::new(100);
 
         Self {
             membership: Membership::new(),
@@ -109,13 +109,13 @@ where
         self.run().await
     }
 
-    pub async fn join(&mut self, seed_addr: Target) -> Result<()> {
+    pub async fn join(&mut self, _seed_addr: Target) -> Result<()> {
         Ok(())
     }
 
     async fn run(&mut self) -> Result<()> {
         self.membership
-            .create_failure_detectors(&mut self.scheduler, self.client.clone());
+            .create_failure_detectors(&mut self.scheduler, self.client.clone())?;
 
         let mut alert_batcher_interval = Interval::new_interval(Duration::from_millis(100)).fuse();
 
@@ -127,7 +127,7 @@ where
                 event = self.scheduler.select_next_some() => {
                     match event {
                         SchedulerEvents::StartClassicRound => {
-                            self.membership.start_classic_round().await;
+                            self.membership.start_classic_round().await?;
                             continue;
                         },
                         SchedulerEvents::None => continue,
@@ -155,7 +155,9 @@ where
                     .membership
                     .handle_message(request, &mut self.scheduler)
                     .await;
-                response_tx.send(response);
+                response_tx
+                    .send(response)
+                    .map_err(|_| Error::new_broken_pipe(None))?;
 
                 Ok(())
             }
@@ -201,7 +203,7 @@ where
         }
     }
 
-    async fn join_attempt(&mut self, seed_addr: Target) -> Result<Response> {
+    async fn join_attempt(&mut self, _seed_addr: Target) -> Result<Response> {
         unimplemented!()
     }
 }

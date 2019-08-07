@@ -23,8 +23,10 @@ struct SeededKey<T> {
     seed: u64,
 }
 
+#[allow(dead_code)]
 impl<T: AsRef<[u8]>> Ring<T> {
     /// Create a new `Ring` from the seed.
+    #[allow(dead_code)]
     pub fn new(seed: u64) -> Self {
         Self {
             seed,

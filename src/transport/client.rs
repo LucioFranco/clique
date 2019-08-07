@@ -72,15 +72,14 @@ mod tests {
         Response,
     };
     use futures::StreamExt;
-    use tokio_sync::mpsc;
-
+    
     #[tokio::test]
     async fn send() {
         let (mut client, mut rx) = Client::new(10);
 
         tokio::spawn(async move {
             match rx.next().await.unwrap() {
-                RequestType::Unary(req, tx) => {
+                RequestType::Unary(_req, tx) => {
                     let res = Response::new(ResponseKind::Probe);
 
                     tx.send(Ok(res)).unwrap();

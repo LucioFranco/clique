@@ -4,18 +4,18 @@ use crate::{
     common::{ConfigId, Endpoint, Scheduler, SchedulerEvents},
     error::{Error, Result},
     transport::{
-        proto::{self, Consensus, Consensus::*, RequestKind::*},
-        Client, Request, Response,
+        proto::{self, Consensus, Consensus::*},
+        Client, Response,
     },
 };
-use futures::{future::Fuse, FutureExt};
+use futures::{FutureExt};
 use rand::Rng;
 use std::{
     collections::{HashMap, HashSet},
     sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant},
 };
-use tokio_sync::{mpsc, oneshot};
+use tokio_sync::{oneshot};
 use tokio_timer::Delay;
 
 use paxos::Paxos;
@@ -45,6 +45,7 @@ pub struct FastPaxos {
 }
 
 impl FastPaxos {
+    #[allow(dead_code)]
     pub fn new(my_addr: Endpoint, size: usize, client: Client, config_id: ConfigId) -> FastPaxos {
         FastPaxos {
             client: client.clone(),
@@ -64,6 +65,7 @@ impl FastPaxos {
     /// # Errors
     ///
     /// Returns `NewBrokenPipe` if the broadcast was not sucessful
+    #[allow(dead_code)]
     pub async fn propose(
         &mut self,
         proposal: Vec<Endpoint>,
@@ -86,7 +88,7 @@ impl FastPaxos {
         // Make sure to cancel the previous task if it's present. There is always only one instance
         // of a classic paxos round
         if let Some(cancel) = self.cancel_tx.replace(tx) {
-            cancel.send(());
+            cancel.send(()).unwrap();
         }
 
         let kind = proto::RequestKind::Consensus(proto::Consensus::FastRoundPhase2bMessage(
@@ -97,7 +99,7 @@ impl FastPaxos {
             },
         ));
 
-        self.client.broadcast(kind);
+        self.client.broadcast(kind).await?;
 
         Ok(())
     }
@@ -115,7 +117,7 @@ impl FastPaxos {
     /// * `FastRoundFailure`: If fast paxos is unable to reach consensus
     pub async fn handle_message(&mut self, msg: Consensus) -> Result<Response> {
         match msg {
-            FastRoundPhase2bMessage(req) => self.handle_fast_round(&req).await,
+            FastRoundPhase2bMessage(req) => self.handle_fast_round(&req).await?,
             _ => unimplemented!(),
         };
 
@@ -157,12 +159,12 @@ impl FastPaxos {
         Err(Error::fast_round_failure())
     }
 
-    fn on_decide(&mut self, hosts: Vec<Endpoint>) -> Result<()> {
+    fn on_decide(&mut self, _hosts: Vec<Endpoint>) -> Result<()> {
         // This is the only place where the value is set to `true`.
         self.decided.store(true, Ordering::SeqCst);
 
         if let Some(cancel_tx) = self.cancel_tx.take() {
-            cancel_tx.send(());
+            cancel_tx.send(()).unwrap();
         }
 
         // TODO: surface decision to membership

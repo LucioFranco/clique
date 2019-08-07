@@ -4,8 +4,8 @@ mod view;
 use crate::{
     common::{Endpoint, Scheduler, SchedulerEvents},
     consensus::FastPaxos,
-    error::{Error, Result},
-    monitor::{ping_pong, Monitor},
+    error::Result,
+    monitor::Monitor,
     transport::{
         proto::{self, JoinMessage, JoinResponse, JoinStatus, PreJoinMessage},
         Client, Request, Response,
@@ -13,7 +13,6 @@ use crate::{
 };
 use futures::FutureExt;
 use std::collections::{HashMap, VecDeque};
-use tokio_sync::{mpsc, oneshot};
 use tracing::info;
 use view::View;
 
@@ -27,6 +26,7 @@ pub struct Membership<M> {
 }
 
 impl<M: Monitor> Membership<M> {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         unimplemented!()
     }
@@ -42,7 +42,7 @@ impl<M: Monitor> Membership<M> {
     pub async fn handle_message(
         &mut self,
         request: Request,
-        scheduler: &mut Scheduler,
+        _scheduler: &mut Scheduler,
     ) -> Result<Response> {
         use proto::RequestKind::*;
         let (_target, kind) = request.into_parts();
@@ -65,7 +65,7 @@ impl<M: Monitor> Membership<M> {
         let PreJoinMessage {
             sender,
             node_id,
-            ring_number,
+            ring_number: _,
             config_id: _,
         } = msg;
 
@@ -99,6 +99,7 @@ impl<M: Monitor> Membership<M> {
         Ok(Response::new_join(join_res))
     }
 
+    #[allow(unreachable_code, unused_variables)]
     pub async fn handle_join(&mut self, msg: JoinMessage) -> Result<Response> {
         let current_config_id = self.view.get_config().config_id();
 
@@ -117,7 +118,7 @@ impl<M: Monitor> Membership<M> {
                 && self.view.is_node_id_present(&msg.node_id)
             {
                 // TODO: joining host is already present so return:
-                /// `SafeToJoin`, current endpoints, and ids.
+                // `SafeToJoin`, current endpoints, and ids.
                 unimplemented!()
             } else {
                 // TODO: Wrong config, return `CONFIG_CHANGE`
@@ -131,10 +132,10 @@ impl<M: Monitor> Membership<M> {
     pub fn create_failure_detectors(
         &mut self,
         scheduler: &mut Scheduler,
-        client: Client,
+        _client: Client,
     ) -> Result<()> {
         for subject in self.view.get_subjects(&self.host_addr)? {
-            let (tx, rx) = tokio_sync::mpsc::channel(100);
+            let (tx, _rx) = tokio_sync::mpsc::channel(100);
             let fut = self.monitor.monitor(subject.clone(), tx);
             scheduler.push(Box::pin(fut.map(|_| SchedulerEvents::None)));
         }
@@ -144,9 +145,5 @@ impl<M: Monitor> Membership<M> {
 
     pub fn drain_alerts(&mut self) -> Vec<()> {
         self.alerts.drain(..).take(5).collect()
-    }
-
-    pub async fn tick(&mut self) {
-        unimplemented!()
     }
 }

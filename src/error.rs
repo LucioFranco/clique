@@ -26,6 +26,7 @@ pub(crate) enum ErrorKind {
 }
 
 impl Error {
+    #[allow(unused)]
     pub(crate) fn kind(&self) -> &ErrorKind {
         &self.kind
     }
@@ -42,10 +43,12 @@ impl Error {
         Self::new(ErrorKind::Join, source)
     }
 
+    #[allow(unused)]
     pub(crate) fn new_uuid_already_seen() -> Self {
         Self::new(ErrorKind::UuidAlreadySeen, None)
     }
 
+    #[allow(unused)]
     pub(crate) fn new_node_already_in_ring() -> Self {
         Self::new(ErrorKind::NodeAlreadyInRing, None)
     }

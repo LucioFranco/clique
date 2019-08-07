@@ -2,7 +2,6 @@ use super::Monitor;
 use crate::common::Endpoint;
 use futures::{future, FutureExt};
 use std::{
-    future::Future,
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
@@ -24,7 +23,7 @@ impl Monitor for PingPong {
 
     fn monitor(
         &mut self,
-        subject: Endpoint,
+        _subject: Endpoint,
         mut client: mpsc::Sender<oneshot::Sender<()>>,
     ) -> Self::Future {
         let timeout = self.timeout;
@@ -34,7 +33,7 @@ impl Monitor for PingPong {
         async move {
             loop {
                 let (tx, rx) = oneshot::channel();
-                client.send(tx);
+                client.send(tx).await.unwrap();
 
                 if let Err(_) = Timeout::new(rx, timeout).await {
                     failures.fetch_add(1, Ordering::SeqCst);
@@ -47,14 +46,4 @@ impl Monitor for PingPong {
         }
             .boxed()
     }
-}
-
-impl PingPong {
-    pub fn new() -> Self {
-        unimplemented!()
-    }
-}
-
-fn request() -> crate::transport::Request {
-    unimplemented!()
 }

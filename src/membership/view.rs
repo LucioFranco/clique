@@ -36,6 +36,7 @@ pub struct Configuration {
     endpoints: Vec<Endpoint>,
 }
 
+#[allow(dead_code)]
 impl View {
     /// Create a new `View` with value `K`.
     pub fn new(k: i32) -> Self {

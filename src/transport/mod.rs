@@ -3,10 +3,7 @@ pub mod proto;
 
 pub use self::client::Client;
 
-use crate::{
-    common::{ConfigId, Endpoint},
-    Error,
-};
+use crate::common::Endpoint;
 use futures::Stream;
 use std::future::Future;
 use tokio_sync::oneshot;
@@ -33,10 +30,10 @@ pub struct Request {
     kind: proto::RequestKind,
 }
 
-pub struct InboundRequest {
-    request: Request,
-    response_tx: oneshot::Sender<crate::Result<Response>>,
-}
+// pub struct InboundRequest {
+//     request: Request,
+//     response_tx: oneshot::Sender<crate::Result<Response>>,
+// }
 
 #[derive(Debug)]
 pub struct Response {

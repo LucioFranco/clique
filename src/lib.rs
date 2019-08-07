@@ -6,9 +6,6 @@
 
 //! Clique membership library.
 
-// TODO: remove this when were ready :)
-#![allow(unused)]
-
 mod alert;
 mod builder;
 mod cluster;

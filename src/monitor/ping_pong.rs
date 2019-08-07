@@ -2,7 +2,7 @@ use super::Monitor;
 use crate::common::Endpoint;
 use futures::{future, FutureExt};
 use std::{
-        sync::{
+    sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
     },

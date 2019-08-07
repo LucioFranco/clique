@@ -6,7 +6,7 @@ jobs:
 - template: ci/azure-rustfmt.yml
   parameters:
     name: rustfmt
-    rust_version: nightly-2019-06-12
+    rust_version: nightly-2019-07-09
 
 - job: test
   displayName: Test
@@ -23,6 +23,6 @@ jobs:
   steps:
     - template: ci/azure-install-rust.yml
       parameters:
-        rust_version: nightly-2019-06-12
+        rust_version: nightly-2019-07-09
     - script: RUSTFLAGS="-D warnings" cargo test --all --all-features
       displayName: cargo test --all --all-features

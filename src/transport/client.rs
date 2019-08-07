@@ -72,7 +72,7 @@ mod tests {
         Response,
     };
     use futures::StreamExt;
-    
+
     #[tokio::test]
     async fn send() {
         let (mut client, mut rx) = Client::new(10);

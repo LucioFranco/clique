@@ -8,14 +8,14 @@ use crate::{
         Client, Response,
     },
 };
-use futures::{FutureExt};
+use futures::FutureExt;
 use rand::Rng;
 use std::{
     collections::{HashMap, HashSet},
     sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant},
 };
-use tokio_sync::{oneshot};
+use tokio_sync::oneshot;
 use tokio_timer::Delay;
 
 use paxos::Paxos;

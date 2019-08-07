@@ -24,7 +24,5 @@ jobs:
     - template: ci/azure-install-rust.yml
       parameters:
         rust_version: nightly-2019-06-12
-    - script: |
-      export RUSTFLAGS="-D warnings"
-      cargo test --all --all-features
+    - script: RUSTFLAGS="-D warnings" cargo test --all --all-features
       displayName: cargo test --all --all-features

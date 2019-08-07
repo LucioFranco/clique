@@ -75,6 +75,10 @@ impl Response {
         }
     }
 
+    pub fn into_inner(self) -> proto::ResponseKind {
+        self.kind
+    }
+
     pub fn new_join(join: proto::JoinResponse) -> Self {
         let kind = proto::ResponseKind::Join(join);
         Self::new(kind)

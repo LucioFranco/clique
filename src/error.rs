@@ -23,6 +23,8 @@ pub(crate) enum ErrorKind {
     VoteAlreadyReceived,
     AlreadyReachedconsensus,
     FastRoundFailure,
+
+    JoinPhase2,
 }
 
 impl Error {
@@ -71,6 +73,10 @@ impl Error {
 
     pub(crate) fn new_unexpected_request(source: Option<Source>) -> Self {
         Self::new(ErrorKind::UnexpectedRequestType, source)
+    }
+
+    pub(crate) fn new_join_phase2() -> Self {
+        Self::new(ErrorKind::JoinPhase2, None)
     }
 }
 

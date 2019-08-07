@@ -3,7 +3,7 @@ use std::{future::Future, pin::Pin};
 use uuid::Uuid;
 
 /// The configuration that we are currently on.
-pub type ConfigId = u64;
+pub type ConfigId = i64;
 /// The ring identifier for which ring this node is from.
 pub type RingNumber = i32;
 /// Represents some _node/destination_ in the system.

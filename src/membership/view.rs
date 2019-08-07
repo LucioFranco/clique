@@ -52,7 +52,7 @@ impl View {
             k,
             rings,
             seen: HashSet::new(),
-            current_config_id: u64::max_value(),
+            current_config_id: -1,
             current_config: Configuration::default(),
             should_update_configuration_id: true,
         }
@@ -261,7 +261,7 @@ impl Configuration {
             hasher.write(endpoint.as_ref());
         }
 
-        hasher.finish()
+        hasher.finish() as i64
     }
 }
 

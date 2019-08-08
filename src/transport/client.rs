@@ -50,7 +50,7 @@ impl Client {
             .await
             .map_err(|_| Error::new_broken_pipe(None))?;
 
-        // Drop the sender because we dont care about the response.
+        // Drop the receiver because we dont care about the response.
         drop(rx);
 
         Ok(())

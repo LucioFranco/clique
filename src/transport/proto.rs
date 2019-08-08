@@ -132,3 +132,14 @@ pub enum EdgeStatus {
     Up,
     Down,
 }
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AlertMessage {
+    edge_src: Endpoint,
+    edge_dst: Endpoint,
+    edge_status: EdgeStatus,
+    config_id: ConfigId,
+    ring_number: Vec<RingNumber>,
+    node_id: NodeId,
+    metadata: Metadata,
+}

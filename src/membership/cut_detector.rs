@@ -42,8 +42,6 @@ impl MultiNodeCutDetector {
     }
 
     fn aggregate(message: AlertMessage) -> Vec<Endpoint> {
-        proposals = vec![];
-
         msg.ring_number
             .iter()
             .map(|ring_number| {
@@ -111,7 +109,7 @@ impl MultiNodeCutDetector {
         vec![]
     }
 
-    fn invalidate_failing_edges(view: &mut MembershipView) -> Vec<Endpoint> {
+    pub fn invalidate_failing_edges(view: &mut MembershipView) -> Vec<Endpoint> {
         // link invalidation is only required when there are failing nodes
         if !self.seen_down_link_events {
             return vec![];

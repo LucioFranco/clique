@@ -2,7 +2,6 @@ use crate::{
     common::Endpoint,
     transport::proto::{AlertMessage, EdgeStatus},
 };
-
 use std::collection::{HashMap, HashSet};
 
 const NUM_MIN: usize = 3;

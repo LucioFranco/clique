@@ -1,8 +1,11 @@
 pub mod ping_pong;
 
-use crate::common::Endpoint;
+use crate::{
+    common::{ConfigId, Endpoint},
+    transport::Client,
+};
 use std::future::Future;
-use tokio_sync::{mpsc, oneshot};
+use tokio_sync::mpsc;
 
 pub trait Monitor {
     type Future: Future<Output = ()> + Send + 'static;
@@ -10,6 +13,8 @@ pub trait Monitor {
     fn monitor(
         &mut self,
         subject: Endpoint,
-        client: mpsc::Sender<oneshot::Sender<()>>,
+        client: Client,
+        current_config_id: ConfigId,
+        notification_tx: mpsc::Sender<(Endpoint, ConfigId)>,
     ) -> Self::Future;
 }

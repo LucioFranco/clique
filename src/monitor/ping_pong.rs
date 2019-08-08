@@ -1,21 +1,17 @@
-use super::Monitor;
-use crate::common::Endpoint;
-use futures::{future, FutureExt};
-use std::{
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
-    },
-    time::{Duration, Instant},
+use crate::{
+    common::{ConfigId, Endpoint},
+    monitor::Monitor,
+    transport::{proto, Client},
 };
-use tokio_sync::{mpsc, oneshot};
+use futures::{future, FutureExt};
+use std::time::{Duration, Instant};
+use tokio_sync::mpsc;
 use tokio_timer::{Delay, Timeout};
 
 #[derive(Debug)]
 pub struct PingPong {
     timeout: Duration,
     tick_delay: Duration,
-    failures: Arc<AtomicUsize>,
 }
 
 impl Monitor for PingPong {
@@ -23,22 +19,32 @@ impl Monitor for PingPong {
 
     fn monitor(
         &mut self,
-        _subject: Endpoint,
-        mut client: mpsc::Sender<oneshot::Sender<()>>,
+        subject: Endpoint,
+        mut client: Client,
+        current_config_id: ConfigId,
+        mut notification_tx: mpsc::Sender<(Endpoint, ConfigId)>,
     ) -> Self::Future {
         let timeout = self.timeout;
         let tick_delay = self.tick_delay;
-        let failures = self.failures.clone();
 
         async move {
-            loop {
-                let (tx, rx) = oneshot::channel();
-                client.send(tx).await.unwrap();
+            let mut failures: usize = 0;
 
-                if let Err(_) = Timeout::new(rx, timeout).await {
-                    failures.fetch_add(1, Ordering::SeqCst);
-                    // TODO: probe failed, we should increment the endpoints counter
-                    unimplemented!()
+            loop {
+                let fut = client.send(subject.clone(), proto::RequestKind::Probe);
+
+                if let Err(_) = Timeout::new(fut, timeout).await {
+                    failures += 1;
+
+                    // TODO: check if the node is bootstraping
+                }
+
+                if failures >= 5 {
+                    notification_tx
+                        .send((subject, current_config_id))
+                        .await
+                        .unwrap();
+                    return;
                 }
 
                 Delay::new(Instant::now() + tick_delay).await;

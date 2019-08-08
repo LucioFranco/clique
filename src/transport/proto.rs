@@ -6,6 +6,7 @@ use std::collections::HashMap;
 pub enum RequestKind {
     PreJoin(PreJoinMessage),
     Join(JoinMessage),
+    BatchedAlert(BatchedAlertMessage),
     Probe,
     Consensus(Consensus),
 }
@@ -31,8 +32,6 @@ pub enum Consensus {
 pub struct PreJoinMessage {
     pub sender: Endpoint,
     pub node_id: NodeId,
-    // pub ring_number: RingNumber,
-    // pub config_id: ConfigId,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -110,4 +109,26 @@ pub struct Metadata {
 pub struct Rank {
     pub round: u32,
     pub node_index: u32,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BatchedAlertMessage {
+    pub sender: Endpoint,
+    pub alerts: Vec<Alert>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Alert {
+    pub src: Endpoint,
+    pub dst: Endpoint,
+    pub edge_status: EdgeStatus,
+    pub config_id: ConfigId,
+    pub ring_number: Vec<RingNumber>,
+    pub node_id: Option<NodeId>,
+}
+
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
+pub enum EdgeStatus {
+    Up,
+    Down,
 }

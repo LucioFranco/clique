@@ -127,8 +127,10 @@ where
     }
 
     async fn run(&mut self) -> Result<()> {
-        self.membership
-            .create_failure_detectors(&mut self.scheduler, self.client.clone())?;
+        let mut edge_failure_notifications_rx = self
+            .membership
+            .create_failure_detectors(&mut self.scheduler, &self.client)?
+            .fuse();
 
         let mut alert_batcher_interval = Interval::new_interval(Duration::from_millis(100)).fuse();
 
@@ -150,9 +152,15 @@ where
                 request = self.client_stream.select_next_some() => {
                     let task = self.handle_client(request);
                     self.scheduler.push(task);
-                }
+                },
+                (subject, config_id) = edge_failure_notifications_rx.select_next_some() => {
+                    self.membership.edge_failure_notification(subject, config_id);
+                },
                 _ = alert_batcher_interval.select_next_some() => {
-                    self.membership.drain_alerts();
+                    if let Some(msg) = self.membership.get_batch_alerts() {
+                        let req = proto::RequestKind::BatchedAlert(msg);
+                        self.client.broadcast(req).await?;
+                    }
                 },
             };
         }
@@ -164,13 +172,9 @@ where
     ) -> Result<()> {
         match request {
             Ok((request, response_tx)) => {
-                let response = self
-                    .membership
-                    .handle_message(request, &mut self.scheduler)
+                self.membership
+                    .handle_message(request, response_tx, &mut self.scheduler)
                     .await;
-                response_tx
-                    .send(response)
-                    .map_err(|_| Error::new_broken_pipe(None))?;
 
                 Ok(())
             }
@@ -247,6 +251,7 @@ where
 
         let res = self
             .send_join_phase2(join_res)
+            // TODO: probably want to make this a stream
             .await?
             .into_iter()
             .filter_map(Result::ok)

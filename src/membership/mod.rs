@@ -2,7 +2,7 @@ mod ring;
 mod view;
 
 use crate::{
-    common::{Endpoint, Scheduler, SchedulerEvents},
+    common::{ConfigId, Endpoint, Scheduler, SchedulerEvents},
     consensus::FastPaxos,
     error::Result,
     monitor::Monitor,
@@ -12,16 +12,26 @@ use crate::{
     },
 };
 use futures::FutureExt;
-use std::collections::{HashMap, VecDeque};
+use std::{
+    collections::{HashMap, VecDeque},
+    time::{Duration, Instant},
+};
+use tokio_sync::{mpsc, oneshot};
 use tracing::info;
 use view::View;
+
+type OutboundResponse = oneshot::Sender<crate::Result<Response>>;
 
 #[derive(Debug)]
 pub struct Membership<M> {
     host_addr: Endpoint,
     view: View,
     monitor: M,
-    alerts: VecDeque<()>,
+    alerts: VecDeque<proto::Alert>,
+    last_enqueued_alert: Instant,
+    joiners_to_respond: HashMap<Endpoint, VecDeque<OutboundResponse>>,
+    current_config_id: ConfigId,
+    batch_window: Duration,
     paxos: FastPaxos,
 }
 
@@ -42,19 +52,26 @@ impl<M: Monitor> Membership<M> {
     pub async fn handle_message(
         &mut self,
         request: Request,
+        response_tx: OutboundResponse,
         _scheduler: &mut Scheduler,
-    ) -> Result<Response> {
+    ) {
         use proto::RequestKind::*;
         let (_target, kind) = request.into_parts();
 
-        let response = match kind {
-            PreJoin(msg) => self.handle_pre_join(msg).await?,
-            Join(msg) => self.handle_join(msg).await?,
-            Consensus(msg) => self.paxos.handle_message(msg).await?,
+        match kind {
+            PreJoin(msg) => {
+                let res = self.handle_pre_join(msg).await;
+                response_tx.send(res).unwrap();
+            }
+            Join(msg) => {
+                self.handle_join(msg, response_tx).await;
+            }
+            Consensus(msg) => {
+                let res = self.paxos.handle_message(msg).await;
+                response_tx.send(res).unwrap();
+            }
             _ => unimplemented!(),
         };
-
-        Ok(response)
     }
 
     pub async fn start_classic_round(&mut self) -> Result<()> {
@@ -62,12 +79,7 @@ impl<M: Monitor> Membership<M> {
     }
 
     pub async fn handle_pre_join(&mut self, msg: PreJoinMessage) -> Result<Response> {
-        let PreJoinMessage {
-            sender,
-            node_id,
-            // ring_number: _,
-            // config_id: _,
-        } = msg;
+        let PreJoinMessage { sender, node_id } = msg;
 
         let status = self.view.is_safe_to_join(&sender, &node_id);
         let config_id = self.view.get_config().config_id();
@@ -100,17 +112,25 @@ impl<M: Monitor> Membership<M> {
     }
 
     #[allow(unreachable_code, unused_variables)]
-    pub async fn handle_join(&mut self, msg: JoinMessage) -> Result<Response> {
+    pub async fn handle_join(&mut self, msg: JoinMessage, response_tx: OutboundResponse) {
         let current_config_id = self.view.get_config().config_id();
 
         if msg.config_id == current_config_id {
-            // TODO: This is the case where we got a join message and are int he same config
-            // as the PreJoin response was created in. This means we can attempt to propose this
-            // node.
+            self.joiners_to_respond
+                .entry(msg.sender.clone())
+                .or_insert(VecDeque::new())
+                .push_back(response_tx);
 
-            // TODO: setup alertmessage and enqueue it. The edge is up!
+            let alert = proto::Alert {
+                src: self.host_addr.clone(),
+                dst: msg.sender.clone(),
+                edge_status: proto::EdgeStatus::Up,
+                config_id: current_config_id,
+                node_id: Some(msg.node_id.clone()),
+                ring_number: msg.ring_number,
+            };
 
-            unimplemented!()
+            self.enqueue_alert(alert);
         } else {
             // This is the case where the config changed between phase 1
             // and phase 2 of the join process.
@@ -124,26 +144,51 @@ impl<M: Monitor> Membership<M> {
                 // TODO: Wrong config, return `CONFIG_CHANGE`
                 unimplemented!()
             };
-
-            Ok(Response::new_join(response))
         }
     }
 
     pub fn create_failure_detectors(
         &mut self,
         scheduler: &mut Scheduler,
-        _client: Client,
-    ) -> Result<()> {
+        client: &Client,
+    ) -> Result<mpsc::Receiver<(Endpoint, ConfigId)>> {
+        let (tx, rx) = mpsc::channel(1000);
+
         for subject in self.view.get_subjects(&self.host_addr)? {
-            let (tx, _rx) = tokio_sync::mpsc::channel(100);
-            let fut = self.monitor.monitor(subject.clone(), tx);
+            let fut = self.monitor.monitor(
+                subject.clone(),
+                client.clone(),
+                self.current_config_id,
+                tx.clone(),
+            );
             scheduler.push(Box::pin(fut.map(|_| SchedulerEvents::None)));
         }
 
-        Ok(())
+        Ok(rx)
     }
 
-    pub fn drain_alerts(&mut self) -> Vec<()> {
-        self.alerts.drain(..).take(5).collect()
+    pub fn edge_failure_notification(&mut self, _subject: Endpoint, _config_id: ConfigId) {
+        // TODO: enqueue a new batch alert with this subject in the EdgeStatus::Down state≤
+        unimplemented!()
+    }
+
+    pub fn get_batch_alerts(&mut self) -> Option<proto::BatchedAlertMessage> {
+        if !self.alerts.is_empty()
+            && (Instant::now() - self.last_enqueued_alert) > self.batch_window
+        {
+            let alerts = self.alerts.drain(..).collect();
+
+            Some(proto::BatchedAlertMessage {
+                sender: self.host_addr.clone(),
+                alerts,
+            })
+        } else {
+            None
+        }
+    }
+
+    pub fn enqueue_alert(&mut self, alert: proto::Alert) {
+        self.last_enqueued_alert = Instant::now();
+        self.alerts.push_back(alert);
     }
 }

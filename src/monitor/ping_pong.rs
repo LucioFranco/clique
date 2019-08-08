@@ -40,7 +40,10 @@ impl Monitor for PingPong {
                 }
 
                 if failures >= 5 {
-                    notification_tx.send((subject, current_config_id)).await.unwrap();
+                    notification_tx
+                        .send((subject, current_config_id))
+                        .await
+                        .unwrap();
                     return;
                 }
 

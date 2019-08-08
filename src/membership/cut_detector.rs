@@ -75,7 +75,7 @@ impl MultiNodeCutDetector {
 
         if (reports_per_host.contains(ring_number)) {
             // Duplicate announcement, ignore
-            return vec![];
+            return Vec::new();
         }
 
         reports_per_host.insert(ring_number, link_src);

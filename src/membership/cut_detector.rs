@@ -2,9 +2,12 @@ use crate::{
     common::{Endpoint, RingNumber},
     membership::view::View,
     transport::proto::{AlertMessage, EdgeStatus},
+    test_utils::trace_init,
 };
 
 use std::collections::{HashMap, HashSet};
+
+use tracing_attributes::instrument;
 
 const NUM_MIN: usize = 3;
 
@@ -42,6 +45,7 @@ impl MultiNodeCutDetector {
         }
     }
 
+    #[instrument]
     fn aggregate(&mut self, message: AlertMessage) -> Vec<Endpoint> {
         message
             .ring_number()
@@ -58,6 +62,7 @@ impl MultiNodeCutDetector {
             .collect()
     }
 
+    #[instrument]
     fn aggregate_for_proposal(
         &mut self,
         link_src: Endpoint,
@@ -66,6 +71,7 @@ impl MultiNodeCutDetector {
         ring_number: RingNumber,
     ) -> Vec<Endpoint> {
         debug_assert!(ring_number <= self.num as RingNumber);
+
 
         if edge_status == EdgeStatus::Down {
             self.seen_down_link_events = true;
@@ -97,6 +103,8 @@ impl MultiNodeCutDetector {
             self.updates_in_progress -= 1;
 
             if self.updates_in_progress == 0 {
+
+                tracing::info!("No more updates in progress");
                 // No outstanding updates, so all nodes have crossed the H threshold. Reports
                 // are not part of a single proposal
                 self.proposal_count += 1;
@@ -215,6 +223,8 @@ mod tests {
 
     #[test]
     fn cut_detection_test_blocking_one_blocker() {
+        trace_init();
+
         let mut cut_detector = MultiNodeCutDetector::new(NUM, HIGH, LOW);
         let dst1 = String::from("127.0.0.2:2");
         let dst2 = String::from("127.0.0.2:2");

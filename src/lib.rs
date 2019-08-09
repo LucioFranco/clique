@@ -17,6 +17,7 @@ mod handle;
 mod membership;
 mod monitor;
 pub mod transport;
+mod test_utils;
 
 pub use self::builder::Builder;
 pub use self::cluster::Cluster;

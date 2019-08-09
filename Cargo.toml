@@ -20,7 +20,10 @@ tokio-sync = "=0.2.0-alpha.1"
 tokio-timer = "=0.3.0-alpha.1"
 twox-hash = "1.4"
 rand = "0.7.0"
-tracing = "0.1"
+tracing = { version = "0.1", features = ["async-await"] }
+tracing-futures = "0.0.0"
+tracing-attributes = "0.1.0"
+tracing-fmt = { git = "https://github.com/tokio-rs/tracing" }
 
 [dev-dependencies]
 tokio = { version = "=0.2.0-alpha.1", features = ["rt-full"] }

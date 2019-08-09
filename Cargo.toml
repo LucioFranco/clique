@@ -16,11 +16,11 @@ bytes = "0.4"
 futures = { version = "=0.3.0-alpha.17", package = "futures-preview", features = ["async-await", "nightly", "io-compat", "compat"] }
 uuid = { version = "0.7", features = ["serde", "v4"] }
 serde = "1.0"
-tokio-sync = { git = "https://github.com/tokio-rs/tokio", features = ["async-traits"] }
-tokio-timer = { git = "https://github.com/tokio-rs/tokio", features = ["async-traits"] }
+tokio-sync = "=0.2.0-alpha.1"
+tokio-timer = "=0.3.0-alpha.1"
 twox-hash = "1.4"
 rand = "0.7.0"
 tracing = "0.1"
 
 [dev-dependencies]
-tokio = { git = "https://github.com/tokio-rs/tokio", features = ["rt-full"] }
+tokio = { version = "=0.2.0-alpha.1", features = ["rt-full"] }

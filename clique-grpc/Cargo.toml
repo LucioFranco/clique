@@ -15,7 +15,7 @@ tower-hyper = "0.1"
 tokio-tcp = "0.1"
 tower = "0.1"
 hyper = "0.12"
-tokio-sync = { git = "https://github.com/tokio-rs/tokio", features = ["async-traits"] }
+tokio-sync = "0.2.0-alpha.1"
 tokio-executor = "0.1"
 prost = "0.5"
 pin-utils = "0.1.0-alpha.4"

@@ -1,6 +1,9 @@
 use crate::common::{ConfigId, Endpoint, NodeId, RingNumber};
+
 use bytes::Bytes;
+
 use std::collections::HashMap;
+use std::default::Default;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum RequestKind {
@@ -105,6 +108,14 @@ pub struct Metadata {
     pub metadata: HashMap<String, Bytes>,
 }
 
+impl Default for Metadata {
+    fn default() -> Self {
+        Metadata {
+            metadata: HashMap::default(),
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct Rank {
     pub round: u32,
@@ -142,4 +153,44 @@ pub struct AlertMessage {
     ring_number: Vec<RingNumber>,
     node_id: NodeId,
     metadata: Metadata,
+}
+
+impl AlertMessage {
+    pub fn new(
+        edge_src: Endpoint,
+        edge_dst: Endpoint,
+        edge_status: EdgeStatus,
+        config_id: ConfigId,
+        ring_number: RingNumber,
+    ) -> Self {
+        AlertMessage {
+            edge_src,
+            edge_dst,
+            edge_status,
+            config_id,
+            ring_number: vec![ring_number],
+            node_id: NodeId::new(),
+            metadata: Metadata::default(),
+        }
+    }
+
+    pub fn edge_src(&self) -> &Endpoint {
+        &self.edge_src
+    }
+
+    pub fn edge_dst(&self) -> &Endpoint {
+        &self.edge_dst
+    }
+
+    pub fn edge_status(&self) -> EdgeStatus {
+        self.edge_status
+    }
+
+    pub fn config_id(&self) -> ConfigId {
+        self.config_id
+    }
+
+    pub fn ring_number(&self) -> &Vec<RingNumber> {
+        &self.ring_number
+    }
 }

@@ -1,5 +1,4 @@
 use crate::common::{ConfigId, Endpoint, NodeId, RingNumber};
-
 use bytes::Bytes;
 
 use std::collections::HashMap;

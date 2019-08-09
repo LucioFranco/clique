@@ -1,7 +1,7 @@
 use crate::{
     common::{Endpoint, RingNumber},
-    transport::proto::{AlertMessage, EdgeStatus},
     membership::view::View,
+    transport::proto::{AlertMessage, EdgeStatus},
 };
 
 use std::collections::{HashMap, HashSet};
@@ -43,7 +43,8 @@ impl MultiNodeCutDetector {
     }
 
     fn aggregate(&mut self, message: AlertMessage) -> Vec<Endpoint> {
-        message.ring_number()
+        message
+            .ring_number()
             .iter()
             .map(|ring_number| {
                 self.aggregate_for_proposal(
@@ -123,7 +124,8 @@ impl MultiNodeCutDetector {
 
         for node_in_flux in pre_proposal_vec.iter_mut() {
             let observers = if view.is_host_present(&node_in_flux) {
-                view.get_observers(&node_in_flux).expect("Node not in ring?")
+                view.get_observers(&node_in_flux)
+                    .expect("Node not in ring?")
             } else {
                 view.get_expected_observers(&node_in_flux)
             };
@@ -149,7 +151,6 @@ impl MultiNodeCutDetector {
                 }
                 ring_number += 1;
             }
-
         }
 
         return proposals_to_return;
@@ -200,12 +201,12 @@ mod tests {
             assert_eq!(0, cut_detector.get_proposal_count());
         }
 
-        ret = cut_detector.aggregate(AlertMessage::new(format!(
-            "127.0.0.1:{}", HIGH),
+        ret = cut_detector.aggregate(AlertMessage::new(
+            format!("127.0.0.1:{}", HIGH),
             dst,
             EdgeStatus::Up,
             CONFIG_ID,
-            ( HIGH - 1 ).try_into().unwrap()
+            (HIGH - 1).try_into().unwrap(),
         ));
 
         assert_eq!(1, ret.len());
@@ -220,7 +221,7 @@ mod tests {
 
         let mut ret = vec![];
 
-        for i in 0..HIGH - 1 { 
+        for i in 0..HIGH - 1 {
             ret = cut_detector.aggregate(AlertMessage::new(
                 format!("127.0.0.1:{}", i + 1),
                 dst1.clone(),
@@ -233,7 +234,7 @@ mod tests {
             assert_eq!(0, cut_detector.get_proposal_count());
         }
 
-        for i in 0..HIGH - 1 { 
+        for i in 0..HIGH - 1 {
             ret = cut_detector.aggregate(AlertMessage::new(
                 format!("127.0.0.1:{}", i + 1),
                 dst2.clone(),
@@ -246,25 +247,24 @@ mod tests {
             assert_eq!(0, cut_detector.get_proposal_count());
         }
 
-        ret = cut_detector.aggregate(AlertMessage::new(format!(
-            "127.0.0.1:{}", HIGH),
+        ret = cut_detector.aggregate(AlertMessage::new(
+            format!("127.0.0.1:{}", HIGH),
             dst1,
             EdgeStatus::Up,
             CONFIG_ID,
-            ( HIGH - 1 ).try_into().unwrap()
+            (HIGH - 1).try_into().unwrap(),
         ));
 
         assert_eq!(0, ret.len());
         assert_eq!(0, cut_detector.get_proposal_count());
 
-        ret = cut_detector.aggregate(AlertMessage::new(format!(
-            "127.0.0.1:{}", HIGH),
+        ret = cut_detector.aggregate(AlertMessage::new(
+            format!("127.0.0.1:{}", HIGH),
             dst2,
             EdgeStatus::Up,
             CONFIG_ID,
-            ( HIGH - 1 ).try_into().unwrap()
+            (HIGH - 1).try_into().unwrap(),
         ));
-
 
         assert_eq!(2, ret.len());
         assert_eq!(1, cut_detector.get_proposal_count());

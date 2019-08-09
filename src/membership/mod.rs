@@ -1,3 +1,4 @@
+mod cut_detector;
 mod ring;
 mod view;
 

@@ -137,11 +137,7 @@ impl Paxos {
     pub(crate) async fn handle_phase_1b(&mut self, request: Phase1bMessage) -> crate::Result<()> {
         let message = request.clone();
 
-        let Phase1bMessage {
-            config_id,
-            rnd,
-            ..
-        } = request;
+        let Phase1bMessage { config_id, rnd, .. } = request;
 
         if config_id != self.config_id {
             return Err(Error::new_unexpected_request(None));
@@ -217,7 +213,10 @@ impl Paxos {
             return Err(Error::new_unexpected_request(None));
         }
 
-        let phase_2b_messages_in_rnd = self.accept_responses.entry(rnd).or_insert_with(HashMap::new);
+        let phase_2b_messages_in_rnd = self
+            .accept_responses
+            .entry(rnd)
+            .or_insert_with(HashMap::new);
 
         if phase_2b_messages_in_rnd.len() > (self.size / 2) && !self.decided {
             let _decision = endpoints;

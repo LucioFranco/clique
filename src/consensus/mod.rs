@@ -150,9 +150,10 @@ impl FastPaxos {
 
         let f = ((self.size - 1) as f64 / 4f64).floor();
 
-        if self.votes_received.len() >= (self.size as f64 - f) as usize 
-            && *count >= (self.size as f64 - f) as usize{
-                return self.on_decide(request.endpoints.clone());
+        if self.votes_received.len() >= (self.size as f64 - f) as usize
+            && *count >= (self.size as f64 - f) as usize
+        {
+            return self.on_decide(request.endpoints.clone());
         }
 
         Err(Error::fast_round_failure())

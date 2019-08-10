@@ -16,6 +16,8 @@ mod event;
 mod handle;
 mod membership;
 mod monitor;
+#[cfg(test)]
+mod support;
 pub mod transport;
 
 pub use self::builder::Builder;

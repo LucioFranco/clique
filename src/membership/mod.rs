@@ -1,3 +1,4 @@
+mod cut_detector;
 mod ring;
 mod view;
 
@@ -128,6 +129,7 @@ impl<M: Monitor> Membership<M> {
                 config_id: current_config_id,
                 node_id: Some(msg.node_id.clone()),
                 ring_number: msg.ring_number,
+                metadata: None,
             };
 
             self.enqueue_alert(alert);

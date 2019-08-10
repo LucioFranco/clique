@@ -186,5 +186,4 @@ mod tests {
         assert!(ring.insert("test"));
         assert!(ring.contains("test"));
     }
-
 }

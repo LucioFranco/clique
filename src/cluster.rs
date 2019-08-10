@@ -284,7 +284,7 @@ where
         for obs in &join_res.endpoints {
             ring_num_per_obs
                 .entry(obs)
-                .or_insert(Vec::new())
+                .or_insert_with(Vec::new)
                 .push(ring_num);
             ring_num += 1;
         }
@@ -296,7 +296,7 @@ where
                 sender: self.endpoint.clone(),
                 node_id: self.node_id.clone(),
                 ring_number: ring_nums,
-                config_id: join_res.config_id.clone(),
+                config_id: join_res.config_id,
             });
 
             let fut = self.transport.send(Request::new(endpoint.clone(), join));

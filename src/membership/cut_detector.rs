@@ -6,11 +6,11 @@ use crate::{
 
 use std::collections::{HashMap, HashSet};
 
-use tracing::{debug, Level};
-use tracing_attributes::instrument;
+use tracing::Level;
 
 const NUM_MIN: usize = 3;
 
+#[allow(dead_code)]
 pub struct MultiNodeCutDetector {
     /// Number of observers per subject and vice versa
     num: usize,
@@ -27,6 +27,7 @@ pub struct MultiNodeCutDetector {
 }
 
 impl MultiNodeCutDetector {
+    #[allow(dead_code)]
     pub fn new(num: usize, high: usize, low: usize) -> Self {
         if high > num || low > high || num < NUM_MIN || low <= 0 || high <= 0 {
             panic!("Invalid arguments passed to cut detector")
@@ -45,6 +46,7 @@ impl MultiNodeCutDetector {
         }
     }
 
+    #[allow(dead_code)]
     fn aggregate(&mut self, message: Alert) -> Vec<Endpoint> {
         message
             .ring_number
@@ -61,6 +63,7 @@ impl MultiNodeCutDetector {
             .collect()
     }
 
+    #[allow(dead_code)]
     fn aggregate_for_proposal(
         &mut self,
         link_src: Endpoint,
@@ -131,6 +134,7 @@ impl MultiNodeCutDetector {
         vec![]
     }
 
+    #[allow(dead_code)]
     pub fn invalidate_failing_edges(&mut self, view: &mut View) -> Vec<Endpoint> {
         // link invalidation is only required when there are failing nodes
         if !self.seen_down_link_events {
@@ -176,6 +180,7 @@ impl MultiNodeCutDetector {
         return proposals_to_return;
     }
 
+    #[allow(dead_code)]
     fn clear(&mut self) {
         self.reports_per_host.clear();
         self.proposal.clear();
@@ -185,6 +190,7 @@ impl MultiNodeCutDetector {
         self.seen_down_link_events = false;
     }
 
+    #[allow(dead_code)]
     pub(crate) fn get_proposal_count(&mut self) -> usize {
         self.proposal_count
     }
@@ -208,10 +214,8 @@ mod tests {
         let mut cut_detector = MultiNodeCutDetector::new(NUM, HIGH, LOW);
         let dst = String::from("127.0.0.2:2");
 
-        let mut ret = vec![];
-
         for i in 0..HIGH - 1 {
-            ret = cut_detector.aggregate(Alert::new(
+            let ret = cut_detector.aggregate(Alert::new(
                 format!("127.0.0.1:{}", i + 1),
                 dst.clone(),
                 EdgeStatus::Up,
@@ -223,7 +227,7 @@ mod tests {
             assert_eq!(0, cut_detector.get_proposal_count());
         }
 
-        ret = cut_detector.aggregate(Alert::new(
+        let ret = cut_detector.aggregate(Alert::new(
             format!("127.0.0.1:{}", HIGH),
             dst,
             EdgeStatus::Up,
@@ -243,10 +247,8 @@ mod tests {
         let dst1 = String::from("127.0.0.2:2");
         let dst2 = String::from("127.0.0.2:3");
 
-        let mut ret = vec![];
-
         for i in 0..HIGH - 1 {
-            ret = cut_detector.aggregate(Alert::new(
+            let ret = cut_detector.aggregate(Alert::new(
                 format!("127.0.0.1:{}", i + 1),
                 dst1.clone(),
                 EdgeStatus::Up,
@@ -259,7 +261,7 @@ mod tests {
         }
 
         for i in 0..HIGH - 1 {
-            ret = cut_detector.aggregate(Alert::new(
+            let ret = cut_detector.aggregate(Alert::new(
                 format!("127.0.0.1:{}", i + 1),
                 dst2.clone(),
                 EdgeStatus::Up,
@@ -271,7 +273,7 @@ mod tests {
             assert_eq!(0, cut_detector.get_proposal_count());
         }
 
-        ret = cut_detector.aggregate(Alert::new(
+        let mut ret = cut_detector.aggregate(Alert::new(
             format!("127.0.0.1:{}", HIGH),
             dst1,
             EdgeStatus::Up,

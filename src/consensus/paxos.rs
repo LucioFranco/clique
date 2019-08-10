@@ -137,13 +137,7 @@ impl Paxos {
     pub(crate) async fn handle_phase_1b(&mut self, request: Phase1bMessage) -> crate::Result<()> {
         let message = request.clone();
 
-        let Phase1bMessage {
-            sender: _,
-            config_id,
-            rnd,
-            vrnd: _,
-            vval: _,
-        } = request;
+        let Phase1bMessage { config_id, rnd, .. } = request;
 
         if config_id != self.config_id {
             return Err(Error::new_unexpected_request(None));
@@ -158,7 +152,7 @@ impl Paxos {
 
         if self.phase_1b_messages.len() > (self.size / 2) {
             let chosen_proposal = select_proposal(message);
-            if self.crnd == rnd && self.cval.len() == 0 && chosen_proposal.len() > 0 {
+            if self.crnd == rnd && self.cval.is_empty() && !chosen_proposal.is_empty() {
                 self.cval = chosen_proposal.clone();
                 let kind = RequestKind::Consensus(Consensus::Phase2aMessage(Phase2aMessage {
                     sender: self.my_addr.clone(),
@@ -178,10 +172,10 @@ impl Paxos {
     #[allow(dead_code)]
     pub(crate) async fn handle_phase_2a(&mut self, request: Phase2aMessage) -> crate::Result<()> {
         let Phase2aMessage {
-            sender: _,
             config_id,
             rnd,
             vval,
+            ..
         } = request;
 
         if config_id != self.config_id {
@@ -189,7 +183,7 @@ impl Paxos {
         }
 
         if self.rnd <= rnd && self.vrnd != rnd {
-            self.rnd = rnd.clone();
+            self.rnd = rnd;
             self.vrnd = rnd;
             self.vval = vval.clone();
 
@@ -211,15 +205,18 @@ impl Paxos {
         let Phase2bMessage {
             config_id,
             rnd,
-            sender: _,
             endpoints,
+            ..
         } = request;
 
         if config_id != self.config_id {
             return Err(Error::new_unexpected_request(None));
         }
 
-        let phase_2b_messages_in_rnd = self.accept_responses.entry(rnd).or_insert(HashMap::new());
+        let phase_2b_messages_in_rnd = self
+            .accept_responses
+            .entry(rnd)
+            .or_insert_with(HashMap::new);
 
         if phase_2b_messages_in_rnd.len() > (self.size / 2) && !self.decided {
             let _decision = endpoints;

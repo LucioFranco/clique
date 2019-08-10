@@ -119,7 +119,7 @@ impl<M: Monitor> Membership<M> {
         if msg.config_id == current_config_id {
             self.joiners_to_respond
                 .entry(msg.sender.clone())
-                .or_insert(VecDeque::new())
+                .or_insert_with(VecDeque::new)
                 .push_back(response_tx);
 
             let alert = proto::Alert {

@@ -29,7 +29,7 @@ pub struct MultiNodeCutDetector {
 impl MultiNodeCutDetector {
     #[allow(dead_code)]
     pub fn new(num: usize, high: usize, low: usize) -> Self {
-        if high > num || low > high || num < NUM_MIN || low <= 0 || high <= 0 {
+        if high > num || low > high || num < NUM_MIN || low == 0 || high == 0 {
             panic!("Invalid arguments passed to cut detector")
         }
 
@@ -83,7 +83,7 @@ impl MultiNodeCutDetector {
         let reports_for_host = self
             .reports_per_host
             .entry(link_dst.clone())
-            .or_insert(HashMap::new());
+            .or_insert_with(HashMap::new);
 
         if reports_for_host.contains_key(&ring_number) {
             // Duplicate announcement, ignore
@@ -126,7 +126,6 @@ impl MultiNodeCutDetector {
 
                 self.proposal.clear();
 
-                tracing::debug!({ proposals = self.proposal_count }, "We have a proposal");
                 return return_val;
             }
         }
@@ -157,8 +156,8 @@ impl MultiNodeCutDetector {
             // Account for all edges between nodes that are past the low threshold
             let mut ring_number = 0;
 
-            for observer in observers.iter() {
-                if self.proposal.contains(observer) || self.pre_proposal.contains(observer) {
+            for observer in observers {
+                if self.proposal.contains(&observer) || self.pre_proposal.contains(&observer) {
                     // Implicit detection of edges between observer and node_in_flux
                     let edge_status = if view.is_host_present(&node_in_flux) {
                         EdgeStatus::Up
@@ -177,7 +176,7 @@ impl MultiNodeCutDetector {
             }
         }
 
-        return proposals_to_return;
+        proposals_to_return
     }
 
     #[allow(dead_code)]
@@ -273,7 +272,7 @@ mod tests {
             assert_eq!(0, cut_detector.get_proposal_count());
         }
 
-        let mut ret = cut_detector.aggregate(Alert::new(
+        let ret = cut_detector.aggregate(Alert::new(
             format!("127.0.0.1:{}", HIGH),
             dst1,
             EdgeStatus::Up,
@@ -284,7 +283,7 @@ mod tests {
         assert_eq!(0, ret.len());
         assert_eq!(0, cut_detector.get_proposal_count());
 
-        ret = cut_detector.aggregate(Alert::new(
+        let ret = cut_detector.aggregate(Alert::new(
             format!("127.0.0.1:{}", HIGH),
             dst2,
             EdgeStatus::Up,
@@ -293,6 +292,186 @@ mod tests {
         ));
 
         assert_eq!(2, ret.len());
+        assert_eq!(1, cut_detector.get_proposal_count());
+    }
+
+    #[test]
+    fn cut_detection_test_blocking_three_blockers() {
+        trace_init();
+
+        let mut cut_detector = MultiNodeCutDetector::new(NUM, HIGH, LOW);
+        let dst1 = String::from("127.0.0.2:2");
+        let dst2 = String::from("127.0.0.2:3");
+        let dst3 = String::from("127.0.0.2:4");
+
+        for i in 0..HIGH - 1 {
+            let ret = cut_detector.aggregate(Alert::new(
+                format!("127.0.0.1:{}", i + 1),
+                dst1.clone(),
+                EdgeStatus::Up,
+                CONFIG_ID,
+                i.try_into().unwrap(),
+            ));
+
+            assert_eq!(0, ret.len());
+            assert_eq!(0, cut_detector.get_proposal_count());
+        }
+
+        for i in 0..HIGH - 1 {
+            let ret = cut_detector.aggregate(Alert::new(
+                format!("127.0.0.1:{}", i + 1),
+                dst2.clone(),
+                EdgeStatus::Up,
+                CONFIG_ID,
+                i.try_into().unwrap(),
+            ));
+
+            assert_eq!(0, ret.len());
+            assert_eq!(0, cut_detector.get_proposal_count());
+        }
+
+        for i in 0..HIGH - 1 {
+            let ret = cut_detector.aggregate(Alert::new(
+                format!("127.0.0.1:{}", i + 1),
+                dst3.clone(),
+                EdgeStatus::Up,
+                CONFIG_ID,
+                i.try_into().unwrap(),
+            ));
+
+            assert_eq!(0, ret.len());
+            assert_eq!(0, cut_detector.get_proposal_count());
+        }
+
+        let ret = cut_detector.aggregate(Alert::new(
+            format!("127.0.0.1:{}", HIGH),
+            dst1,
+            EdgeStatus::Up,
+            CONFIG_ID,
+            (HIGH - 1).try_into().unwrap(),
+        ));
+
+        assert_eq!(0, ret.len());
+        assert_eq!(0, cut_detector.get_proposal_count());
+
+        let ret = cut_detector.aggregate(Alert::new(
+            format!("127.0.0.1:{}", HIGH),
+            dst2,
+            EdgeStatus::Up,
+            CONFIG_ID,
+            (HIGH - 1).try_into().unwrap(),
+        ));
+
+        assert_eq!(0, ret.len());
+        assert_eq!(0, cut_detector.get_proposal_count());
+
+        let ret = cut_detector.aggregate(Alert::new(
+            format!("127.0.0.1:{}", HIGH),
+            dst3,
+            EdgeStatus::Up,
+            CONFIG_ID,
+            (HIGH - 1).try_into().unwrap(),
+        ));
+
+        assert_eq!(3, ret.len());
+        assert_eq!(1, cut_detector.get_proposal_count());
+    }
+
+    #[test]
+    fn cut_detection_test_blocking_multiple_blockers_past_high() {
+        trace_init();
+
+        let mut cut_detector = MultiNodeCutDetector::new(NUM, HIGH, LOW);
+        let dst1 = String::from("127.0.0.2:2");
+        let dst2 = String::from("127.0.0.2:3");
+        let dst3 = String::from("127.0.0.2:4");
+
+        for i in 0..HIGH - 1 {
+            let ret = cut_detector.aggregate(Alert::new(
+                format!("127.0.0.1:{}", i + 1),
+                dst1.clone(),
+                EdgeStatus::Up,
+                CONFIG_ID,
+                i.try_into().unwrap(),
+            ));
+
+            assert_eq!(0, ret.len());
+            assert_eq!(0, cut_detector.get_proposal_count());
+        }
+
+        for i in 0..HIGH - 1 {
+            let ret = cut_detector.aggregate(Alert::new(
+                format!("127.0.0.1:{}", i + 1),
+                dst2.clone(),
+                EdgeStatus::Up,
+                CONFIG_ID,
+                i.try_into().unwrap(),
+            ));
+
+            assert_eq!(0, ret.len());
+            assert_eq!(0, cut_detector.get_proposal_count());
+        }
+
+        for i in 0..HIGH - 1 {
+            let ret = cut_detector.aggregate(Alert::new(
+                format!("127.0.0.1:{}", i + 1),
+                dst3.clone(),
+                EdgeStatus::Up,
+                CONFIG_ID,
+                i.try_into().unwrap(),
+            ));
+
+            assert_eq!(0, ret.len());
+            assert_eq!(0, cut_detector.get_proposal_count());
+        }
+
+        cut_detector.aggregate(Alert::new(
+            format!("127.0.0.1:{}", HIGH),
+            dst1.clone(),
+            EdgeStatus::Up,
+            CONFIG_ID,
+            (HIGH - 1).try_into().unwrap(),
+        ));
+
+        let ret = cut_detector.aggregate(Alert::new(
+            format!("127.0.0.1:{}", HIGH + 1),
+            dst1,
+            EdgeStatus::Up,
+            CONFIG_ID,
+            (HIGH - 1).try_into().unwrap(),
+        ));
+
+        assert_eq!(0, ret.len());
+        assert_eq!(0, cut_detector.get_proposal_count());
+
+        cut_detector.aggregate(Alert::new(
+            format!("127.0.0.1:{}", HIGH),
+            dst3.clone(),
+            EdgeStatus::Up,
+            CONFIG_ID,
+            (HIGH - 1).try_into().unwrap(),
+        ));
+
+        let ret = cut_detector.aggregate(Alert::new(
+            format!("127.0.0.1:{}", HIGH + 1),
+            dst3,
+            EdgeStatus::Up,
+            CONFIG_ID,
+            (HIGH - 1).try_into().unwrap(),
+        ));
+
+        assert_eq!(0, ret.len());
+        assert_eq!(0, cut_detector.get_proposal_count());
+
+        let ret = cut_detector.aggregate(Alert::new(
+            format!("127.0.0.1:{}", HIGH + 1),
+            dst2,
+            EdgeStatus::Up,
+            CONFIG_ID,
+            (HIGH - 1).try_into().unwrap(),
+        ));
+
+        assert_eq!(3, ret.len());
         assert_eq!(1, cut_detector.get_proposal_count());
     }
 }

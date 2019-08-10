@@ -1,7 +1,7 @@
 use crate::{
     common::{Endpoint, RingNumber},
     membership::view::View,
-    transport::proto::{AlertMessage, EdgeStatus},
+    transport::proto::{Alert, EdgeStatus},
 };
 
 use std::collections::{HashMap, HashSet};
@@ -45,15 +45,15 @@ impl MultiNodeCutDetector {
         }
     }
 
-    fn aggregate(&mut self, message: AlertMessage) -> Vec<Endpoint> {
+    fn aggregate(&mut self, message: Alert) -> Vec<Endpoint> {
         message
-            .ring_number()
+            .ring_number
             .iter()
             .map(|ring_number| {
                 self.aggregate_for_proposal(
-                    message.edge_src().clone(),
-                    message.edge_dst().clone(),
-                    message.edge_status(),
+                    message.src.clone(),
+                    message.dst.clone(),
+                    message.edge_status,
                     *ring_number,
                 )
             })
@@ -211,7 +211,7 @@ mod tests {
         let mut ret = vec![];
 
         for i in 0..HIGH - 1 {
-            ret = cut_detector.aggregate(AlertMessage::new(
+            ret = cut_detector.aggregate(Alert::new(
                 format!("127.0.0.1:{}", i + 1),
                 dst.clone(),
                 EdgeStatus::Up,
@@ -223,7 +223,7 @@ mod tests {
             assert_eq!(0, cut_detector.get_proposal_count());
         }
 
-        ret = cut_detector.aggregate(AlertMessage::new(
+        ret = cut_detector.aggregate(Alert::new(
             format!("127.0.0.1:{}", HIGH),
             dst,
             EdgeStatus::Up,
@@ -246,7 +246,7 @@ mod tests {
         let mut ret = vec![];
 
         for i in 0..HIGH - 1 {
-            ret = cut_detector.aggregate(AlertMessage::new(
+            ret = cut_detector.aggregate(Alert::new(
                 format!("127.0.0.1:{}", i + 1),
                 dst1.clone(),
                 EdgeStatus::Up,
@@ -259,7 +259,7 @@ mod tests {
         }
 
         for i in 0..HIGH - 1 {
-            ret = cut_detector.aggregate(AlertMessage::new(
+            ret = cut_detector.aggregate(Alert::new(
                 format!("127.0.0.1:{}", i + 1),
                 dst2.clone(),
                 EdgeStatus::Up,
@@ -271,7 +271,7 @@ mod tests {
             assert_eq!(0, cut_detector.get_proposal_count());
         }
 
-        ret = cut_detector.aggregate(AlertMessage::new(
+        ret = cut_detector.aggregate(Alert::new(
             format!("127.0.0.1:{}", HIGH),
             dst1,
             EdgeStatus::Up,
@@ -282,7 +282,7 @@ mod tests {
         assert_eq!(0, ret.len());
         assert_eq!(0, cut_detector.get_proposal_count());
 
-        ret = cut_detector.aggregate(AlertMessage::new(
+        ret = cut_detector.aggregate(Alert::new(
             format!("127.0.0.1:{}", HIGH),
             dst2,
             EdgeStatus::Up,

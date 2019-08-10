@@ -16,9 +16,9 @@ mod event;
 mod handle;
 mod membership;
 mod monitor;
-pub mod transport;
 #[cfg(test)]
 mod support;
+pub mod transport;
 
 pub use self::builder::Builder;
 pub use self::cluster::Cluster;

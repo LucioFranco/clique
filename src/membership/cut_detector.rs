@@ -592,7 +592,7 @@ mod tests {
         let endpoints: Vec<Endpoint> = (0..30)
             .map(|i| {
                 let endpoint = format!("127.0.0.2:{}", 2 + i);
-                view.ring_add(endpoint.clone(), NodeId::new());
+                view.ring_add(endpoint.clone(), NodeId::new()).unwrap();
                 endpoint
             })
             .collect();

@@ -197,6 +197,7 @@ impl MultiNodeCutDetector {
 
 #[cfg(test)]
 mod tests {
+    use crate::common::NodeId;
     use crate::support::trace_init;
 
     use std::convert::TryInto;
@@ -379,6 +380,8 @@ mod tests {
 
     #[test]
     fn cut_detection_test_blocking_multiple_blockers_past_high() {
+        // In this test, we have 3 destinations, all of which are > LOW but dst1 and dst3 have > HIGH
+        // reports. Only when dst2 also passes the HIGH boundary, we get a proposal
         trace_init();
 
         let mut cut_detector = MultiNodeCutDetector::new(NUM, HIGH, LOW);
@@ -425,6 +428,7 @@ mod tests {
             assert_eq!(0, cut_detector.get_proposal_count());
         }
 
+        // Add more reports for dst1 and dst3 past the HIGH boundary
         cut_detector.aggregate(Alert::new(
             format!("127.0.0.1:{}", HIGH),
             dst1.clone(),
@@ -473,5 +477,173 @@ mod tests {
 
         assert_eq!(3, ret.len());
         assert_eq!(1, cut_detector.get_proposal_count());
+    }
+
+    #[test]
+    fn cut_detection_test_below_low() {
+        // We have 3 destinations in this test, but only two are in the proposal set as dst2
+        // only has < LOW alerts, therefore, only dst1 and dst3 are a part of the proposal set.
+        trace_init();
+
+        let mut cut_detector = MultiNodeCutDetector::new(NUM, HIGH, LOW);
+        let dst1 = String::from("127.0.0.2:2");
+        let dst2 = String::from("127.0.0.2:3");
+        let dst3 = String::from("127.0.0.2:4");
+
+        for i in 0..HIGH - 1 {
+            let ret = cut_detector.aggregate(Alert::new(
+                format!("127.0.0.1:{}", i + 1),
+                dst1.clone(),
+                EdgeStatus::Up,
+                CONFIG_ID,
+                i.try_into().unwrap(),
+            ));
+
+            assert_eq!(0, ret.len());
+            assert_eq!(0, cut_detector.get_proposal_count());
+        }
+
+        // dst2 has < LOW updates
+        for i in 0..LOW - 1 {
+            let ret = cut_detector.aggregate(Alert::new(
+                format!("127.0.0.1:{}", i + 1),
+                dst2.clone(),
+                EdgeStatus::Up,
+                CONFIG_ID,
+                i.try_into().unwrap(),
+            ));
+
+            assert_eq!(0, ret.len());
+            assert_eq!(0, cut_detector.get_proposal_count());
+        }
+
+        for i in 0..HIGH - 1 {
+            let ret = cut_detector.aggregate(Alert::new(
+                format!("127.0.0.1:{}", i + 1),
+                dst3.clone(),
+                EdgeStatus::Up,
+                CONFIG_ID,
+                i.try_into().unwrap(),
+            ));
+
+            assert_eq!(0, ret.len());
+            assert_eq!(0, cut_detector.get_proposal_count());
+        }
+
+        let ret = cut_detector.aggregate(Alert::new(
+            format!("127.0.0.1:{}", HIGH),
+            dst1,
+            EdgeStatus::Up,
+            CONFIG_ID,
+            (HIGH - 1).try_into().unwrap(),
+        ));
+
+        assert_eq!(0, ret.len());
+        assert_eq!(0, cut_detector.get_proposal_count());
+
+        let ret = cut_detector.aggregate(Alert::new(
+            format!("127.0.0.1:{}", HIGH),
+            dst3,
+            EdgeStatus::Up,
+            CONFIG_ID,
+            (HIGH - 1).try_into().unwrap(),
+        ));
+
+        assert_eq!(2, ret.len());
+        assert_eq!(1, cut_detector.get_proposal_count());
+    }
+
+    #[test]
+    fn cut_detection_test_batch() {
+        trace_init();
+
+        let mut cut_detector = MultiNodeCutDetector::new(NUM, HIGH, LOW);
+
+        let endpoints: Vec<Endpoint> = (0..3).map(|i| format!("127.0.0.1:{}", 2 + i)).collect();
+
+        let proposal: Vec<Endpoint> = endpoints
+            .iter()
+            .map(move |endpoint| {
+                let mut ret = vec![];
+
+                // inner for loop because nested iterators make using mut references tricky
+                for num in 0..NUM {
+                    ret.extend(cut_detector.aggregate(Alert::new(
+                        String::from("127.0.0.1:1"),
+                        endpoint.clone(),
+                        EdgeStatus::Up,
+                        CONFIG_ID,
+                        num.try_into().unwrap(),
+                    )));
+                }
+
+                ret
+            })
+            .flatten()
+            .collect();
+
+        assert_eq!(3, proposal.len());
+    }
+
+    #[test]
+    fn cut_detection_test_link_invalidation() {
+        let mut view = View::new(NUM.try_into().unwrap());
+        let mut cut_detector = MultiNodeCutDetector::new(NUM, HIGH, LOW);
+        let endpoints: Vec<Endpoint> = (0..30)
+            .map(|i| {
+                let endpoint = format!("127.0.0.2:{}", 2 + i);
+                view.ring_add(endpoint.clone(), NodeId::new());
+                endpoint
+            })
+            .collect();
+
+        let dst = &endpoints[0];
+
+        // shouldn't fail as we just added this to the view
+        let observers = view.get_observers(dst).unwrap();
+        assert_eq!(NUM, observers.len());
+
+        // Add alerts from the observers [0, H-1) for dst
+        for i in 0..HIGH - 1 {
+            let ret = cut_detector.aggregate(Alert::new(
+                observers[i].clone(),
+                dst.clone(),
+                EdgeStatus::Down,
+                CONFIG_ID,
+                i.try_into().unwrap(),
+            ));
+
+            assert_eq!(0, ret.len());
+            assert_eq!(0, cut_detector.get_proposal_count());
+        }
+
+        // Next, we add alerts *about* the observers [H, K) for node dst
+        let mut failed_observers = HashSet::new();
+        for i in HIGH - 1..NUM {
+            let observers_of_observer = view.get_observers(&observers[i]).unwrap();
+            failed_observers.insert(observers[i].clone());
+
+            for j in 0..NUM {
+                let ret = cut_detector.aggregate(Alert::new(
+                    observers_of_observer[j].clone(),
+                    observers[i].clone(),
+                    EdgeStatus::Down,
+                    CONFIG_ID,
+                    j.try_into().unwrap(),
+                ));
+
+                assert_eq!(0, ret.len());
+                assert_eq!(0, cut_detector.get_proposal_count());
+            }
+        }
+
+        // At this point, (K - H - 1) observers of dst will be past H, and dst will be in H - 1
+        // Link invalidation should bring the failed observers and dst to the stable region
+        let ret = cut_detector.invalidate_failing_edges(&mut view);
+        assert_eq!(4, ret.len());
+        assert_eq!(1, cut_detector.get_proposal_count());
+
+        ret.iter()
+            .for_each(|node| assert!(failed_observers.contains(node) || node == dst));
     }
 }

@@ -2,11 +2,11 @@ use crate::{
     common::{Endpoint, RingNumber},
     membership::view::View,
     transport::proto::{AlertMessage, EdgeStatus},
-    test_utils::trace_init,
 };
 
 use std::collections::{HashMap, HashSet};
 
+use tracing::{debug, Level};
 use tracing_attributes::instrument;
 
 const NUM_MIN: usize = 3;
@@ -45,7 +45,6 @@ impl MultiNodeCutDetector {
         }
     }
 
-    #[instrument]
     fn aggregate(&mut self, message: AlertMessage) -> Vec<Endpoint> {
         message
             .ring_number()
@@ -62,7 +61,6 @@ impl MultiNodeCutDetector {
             .collect()
     }
 
-    #[instrument]
     fn aggregate_for_proposal(
         &mut self,
         link_src: Endpoint,
@@ -70,29 +68,40 @@ impl MultiNodeCutDetector {
         edge_status: EdgeStatus,
         ring_number: RingNumber,
     ) -> Vec<Endpoint> {
-        debug_assert!(ring_number <= self.num as RingNumber);
+        let span = tracing::span!(Level::DEBUG, "aggregate");
+        let _e = span.enter();
 
+        debug_assert!(ring_number <= self.num as RingNumber);
 
         if edge_status == EdgeStatus::Down {
             self.seen_down_link_events = true;
         }
 
-        let reports_per_host = self
+        let reports_for_host = self
             .reports_per_host
             .entry(link_dst.clone())
             .or_insert(HashMap::new());
 
-        if reports_per_host.contains_key(&ring_number) {
+        if reports_for_host.contains_key(&ring_number) {
             // Duplicate announcement, ignore
             return vec![];
         }
 
-        reports_per_host.insert(ring_number, link_src);
-        let num_reports_for_host = reports_per_host.len();
+        reports_for_host.insert(ring_number, link_src);
+        let num_reports_for_host = reports_for_host.len();
+
+        tracing::debug!(
+            num_reports = num_reports_for_host,
+            is_low = num_reports_for_host == self.low,
+            is_high = num_reports_for_host == self.high,
+            proposal = ?self.proposal,
+            pre_proposal = ?self.pre_proposal
+        );
 
         if num_reports_for_host == self.low {
             self.updates_in_progress += 1;
             self.pre_proposal.insert(link_dst.clone());
+            tracing::debug!(crossed_low = ?link_dst);
         }
 
         if num_reports_for_host == self.high {
@@ -101,10 +110,12 @@ impl MultiNodeCutDetector {
             self.pre_proposal.remove(&link_dst);
             self.proposal.push(link_dst);
             self.updates_in_progress -= 1;
+            tracing::debug!(
+                { updates = self.updates_in_progress },
+                "One more destination cleared the bar"
+            );
 
             if self.updates_in_progress == 0 {
-
-                tracing::info!("No more updates in progress");
                 // No outstanding updates, so all nodes have crossed the H threshold. Reports
                 // are not part of a single proposal
                 self.proposal_count += 1;
@@ -112,6 +123,7 @@ impl MultiNodeCutDetector {
 
                 self.proposal.clear();
 
+                tracing::debug!({ proposals = self.proposal_count }, "We have a proposal");
                 return return_val;
             }
         }
@@ -180,6 +192,8 @@ impl MultiNodeCutDetector {
 
 #[cfg(test)]
 mod tests {
+    use crate::support::trace_init;
+
     use std::convert::TryInto;
 
     use super::*;
@@ -227,7 +241,7 @@ mod tests {
 
         let mut cut_detector = MultiNodeCutDetector::new(NUM, HIGH, LOW);
         let dst1 = String::from("127.0.0.2:2");
-        let dst2 = String::from("127.0.0.2:2");
+        let dst2 = String::from("127.0.0.2:3");
 
         let mut ret = vec![];
 

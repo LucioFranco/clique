@@ -11,7 +11,8 @@ use tracing::Level;
 const NUM_MIN: usize = 3;
 
 #[allow(dead_code)]
-pub struct MultiNodeCutDetector {
+#[derive(Debug)]
+pub struct CutDetector {
     /// Number of observers per subject and vice versa
     num: usize,
     /// High water mark
@@ -26,7 +27,7 @@ pub struct MultiNodeCutDetector {
     seen_down_link_events: bool,
 }
 
-impl MultiNodeCutDetector {
+impl CutDetector {
     #[allow(dead_code)]
     pub fn new(num: usize, high: usize, low: usize) -> Self {
         if high > num || low > high || num < NUM_MIN || low == 0 || high == 0 {
@@ -211,7 +212,7 @@ mod tests {
 
     #[test]
     fn cut_detection_test() {
-        let mut cut_detector = MultiNodeCutDetector::new(NUM, HIGH, LOW);
+        let mut cut_detector = CutDetector::new(NUM, HIGH, LOW);
         let dst = String::from("127.0.0.2:2");
 
         for i in 0..HIGH - 1 {
@@ -243,7 +244,7 @@ mod tests {
     fn cut_detection_test_blocking_one_blocker() {
         trace_init();
 
-        let mut cut_detector = MultiNodeCutDetector::new(NUM, HIGH, LOW);
+        let mut cut_detector = CutDetector::new(NUM, HIGH, LOW);
         let dst1 = String::from("127.0.0.2:2");
         let dst2 = String::from("127.0.0.2:3");
 
@@ -300,7 +301,7 @@ mod tests {
     fn cut_detection_test_blocking_three_blockers() {
         trace_init();
 
-        let mut cut_detector = MultiNodeCutDetector::new(NUM, HIGH, LOW);
+        let mut cut_detector = CutDetector::new(NUM, HIGH, LOW);
         let dst1 = String::from("127.0.0.2:2");
         let dst2 = String::from("127.0.0.2:3");
         let dst3 = String::from("127.0.0.2:4");
@@ -384,7 +385,7 @@ mod tests {
         // reports. Only when dst2 also passes the HIGH boundary, we get a proposal
         trace_init();
 
-        let mut cut_detector = MultiNodeCutDetector::new(NUM, HIGH, LOW);
+        let mut cut_detector = CutDetector::new(NUM, HIGH, LOW);
         let dst1 = String::from("127.0.0.2:2");
         let dst2 = String::from("127.0.0.2:3");
         let dst3 = String::from("127.0.0.2:4");
@@ -485,7 +486,7 @@ mod tests {
         // only has < LOW alerts, therefore, only dst1 and dst3 are a part of the proposal set.
         trace_init();
 
-        let mut cut_detector = MultiNodeCutDetector::new(NUM, HIGH, LOW);
+        let mut cut_detector = CutDetector::new(NUM, HIGH, LOW);
         let dst1 = String::from("127.0.0.2:2");
         let dst2 = String::from("127.0.0.2:3");
         let dst3 = String::from("127.0.0.2:4");
@@ -557,7 +558,7 @@ mod tests {
     fn cut_detection_test_batch() {
         trace_init();
 
-        let mut cut_detector = MultiNodeCutDetector::new(NUM, HIGH, LOW);
+        let mut cut_detector = CutDetector::new(NUM, HIGH, LOW);
 
         let endpoints: Vec<Endpoint> = (0..3).map(|i| format!("127.0.0.1:{}", 2 + i)).collect();
 
@@ -588,7 +589,7 @@ mod tests {
     #[test]
     fn cut_detection_test_link_invalidation() {
         let mut view = View::new(NUM.try_into().unwrap());
-        let mut cut_detector = MultiNodeCutDetector::new(NUM, HIGH, LOW);
+        let mut cut_detector = CutDetector::new(NUM, HIGH, LOW);
         let endpoints: Vec<Endpoint> = (0..30)
             .map(|i| {
                 let endpoint = format!("127.0.0.2:{}", 2 + i);
@@ -603,7 +604,7 @@ mod tests {
         let observers = view.get_observers(dst).unwrap();
         assert_eq!(NUM, observers.len());
 
-        // Add alerts from the observers [0, H-1) for dst
+        // Add alerts from the observers [0, H-1) for dst alerting that dst is down
         for i in 0..HIGH - 1 {
             let ret = cut_detector.aggregate(Alert::new(
                 observers[i].clone(),

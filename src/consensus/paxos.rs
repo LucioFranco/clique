@@ -9,7 +9,11 @@ use crate::{
         Client,
     },
 };
-use std::{collections::HashMap, convert::TryInto, hash::Hasher};
+use std::{
+    collections::{HashMap, HashSet},
+    convert::TryInto,
+    hash::Hasher,
+};
 use twox_hash::XxHash32;
 
 #[derive(Debug)]
@@ -151,7 +155,7 @@ impl Paxos {
         self.phase_1b_messages.push(message.clone());
 
         if self.phase_1b_messages.len() > (self.size / 2) {
-            let chosen_proposal = select_proposal(message);
+            let chosen_proposal = select_proposal(&self.phase_1b_messages, self.size);
             if self.crnd == rnd && self.cval.is_empty() && !chosen_proposal.is_empty() {
                 self.cval = chosen_proposal.clone();
                 let kind = RequestKind::Consensus(Consensus::Phase2aMessage(Phase2aMessage {
@@ -228,6 +232,68 @@ impl Paxos {
     }
 }
 
-fn select_proposal(_message: Phase1bMessage) -> Vec<Endpoint> {
-    unimplemented!()
+fn select_proposal(messages: &[Phase1bMessage], size: usize) -> Vec<Endpoint> {
+    // The rule with which a coordinator picks a value proposed. Corresponds
+    // Figure 2 of the Fast Paxos paper:
+    // https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/tr-2005-112.pdf
+    let max_vrnd_so_far = messages.iter().map(|msg| msg.vrnd).max();
+
+    if max_vrnd_so_far.is_none() {
+        // Coordingator will not move on to Phase 2 unless a proposal is chosen, so it's
+        // safe to return an empty vec
+        return vec![];
+    }
+
+    let max_vrnd_so_far = max_vrnd_so_far.unwrap();
+
+    // Let k be the largest value of `vr(a)` (Highest valued round the acceptor `a` voted in)
+    // for all a in Q (quorum).
+    // `V` (collected_vals_set) is the set of all `vv(a)` (vval of acceptor) for all acceptors in Q
+    // such that `vr(a) == k`.
+    // This basically means that we have a set of all `vval`s of acceptors who's vr is the highest
+    // ranked round.
+    let collected_vals_set: HashSet<Vec<Endpoint>> = messages
+        .iter()
+        .filter(|msg| msg.vrnd == max_vrnd_so_far)
+        .filter(|msg| msg.vval.len() > 0)
+        .map(|msg| msg.vval.clone())
+        .collect();
+
+    let mut chosen_proposal = None;
+
+    if collected_vals_set.len() == 1 {
+        // If there is only one value in the set, choose that.
+        chosen_proposal = Some(collected_vals_set.iter().next().unwrap());
+    } else if collected_vals_set.len() > 1 {
+        let mut counters = HashMap::new();
+
+        for values in collected_vals_set.iter() {
+            let count = counters.entry(values).and_modify(|e| *e += 1).or_insert(0);
+
+            if *count + 1 > (size / 4) {
+                chosen_proposal = Some(values);
+                break;
+            }
+        }
+    }
+
+    // At this point, no value has been selected yet and it is safe for the coordinator to pick any proposed value.
+    // If none of the 'vvals' contain valid values (are all empty lists), then this method returns an empty
+    // list. This can happen because a quorum of acceptors that did not vote in prior rounds may have responded
+    // to the coordinator first. This is safe to do here for two reasons:
+    //      1) The coordinator will only proceed with phase 2 if it has a valid vote.
+    //      2) It is likely that the coordinator (itself being an acceptor) is the only one with a valid vval,
+    //         and has not heard a Phase1bMessage from itself yet. Once that arrives, phase1b will be triggered
+    //         again.
+    //
+    if let Some(proposal) = chosen_proposal {
+        proposal.to_vec()
+    } else {
+        messages
+            .iter()
+            .filter(|msg| msg.vval.len() > 0)
+            .map(|msg| msg.vval.clone())
+            .nth(0)
+            .unwrap_or_else(Vec::new)
+    }
 }

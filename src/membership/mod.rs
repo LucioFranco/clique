@@ -12,6 +12,7 @@ use crate::{
         Client, Request, Response,
     },
 };
+use cut_detector::CutDetector;
 use futures::FutureExt;
 use std::{
     collections::{HashMap, VecDeque},
@@ -27,6 +28,7 @@ type OutboundResponse = oneshot::Sender<crate::Result<Response>>;
 pub struct Membership<M> {
     host_addr: Endpoint,
     view: View,
+    cut_detector: CutDetector,
     monitor: M,
     alerts: VecDeque<proto::Alert>,
     last_enqueued_alert: Instant,

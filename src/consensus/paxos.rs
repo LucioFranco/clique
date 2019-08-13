@@ -289,6 +289,7 @@ fn select_proposal(messages: &[Phase1bMessage], size: usize) -> Vec<Endpoint> {
     if let Some(proposal) = chosen_proposal {
         proposal.to_vec()
     } else {
+        // Just grab the first value you find which is not empty.
         messages
             .iter()
             .filter(|msg| msg.vval.len() > 0)

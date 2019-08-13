@@ -32,7 +32,7 @@ const BASE_DELAY: u64 = 1000;
 /// scheduled to be run after a random interval of time. The randomness is introduced so that
 /// multiple nodes do not start their own instances of paxos as coordinators.
 #[derive(Debug)]
-pub struct FastPaxos {
+pub struct FastPaxos<'sched> {
     client: Client,
     my_addr: Endpoint,
     size: usize,
@@ -42,11 +42,18 @@ pub struct FastPaxos {
     votes_received: HashSet<Endpoint>, // should be a bitset?
     votes_per_proposal: HashMap<Vec<Endpoint>, usize>,
     cancel_tx: Option<oneshot::Sender<()>>,
+    scheduler: &'sched mut Scheduler,
 }
 
 impl FastPaxos {
     #[allow(dead_code)]
-    pub fn new(my_addr: Endpoint, size: usize, client: Client, config_id: ConfigId) -> FastPaxos {
+    pub fn new(
+        my_addr: Endpoint,
+        size: usize,
+        client: Client,
+        config_id: ConfigId,
+        scheduler: &mut Scheduler,
+    ) -> FastPaxos {
         FastPaxos {
             client: client.clone(),
             config_id,
@@ -57,6 +64,7 @@ impl FastPaxos {
             votes_received: HashSet::default(),
             votes_per_proposal: HashMap::default(),
             cancel_tx: None,
+            scheduler,
         }
     }
 
@@ -66,11 +74,7 @@ impl FastPaxos {
     ///
     /// Returns `NewBrokenPipe` if the broadcast was not sucessful
     #[allow(dead_code)]
-    pub async fn propose(
-        &mut self,
-        proposal: Vec<Endpoint>,
-        scheduler: &mut Scheduler,
-    ) -> Result<()> {
+    pub async fn propose(&mut self, proposal: Vec<Endpoint>) -> Result<()> {
         let mut paxos_delay = Delay::new(Instant::now() + self.get_random_delay()).fuse();
 
         let (tx, cancel_rx) = oneshot::channel();
@@ -83,7 +87,7 @@ impl FastPaxos {
             }
         };
 
-        scheduler.push(Box::pin(task));
+        self.scheduler.push(Box::pin(task));
 
         // Make sure to cancel the previous task if it's present. There is always only one instance
         // of a classic paxos round
@@ -115,7 +119,7 @@ impl FastPaxos {
     /// * `AlreadyReachedConsensus`: If this is called after the cluster has already reached
     /// consensus.
     /// * `FastRoundFailure`: If fast paxos is unable to reach consensus
-    pub async fn handle_message(&mut self, msg: Consensus) -> Result<Response> {
+    pub async fn handle_message(&mut self, msg: Consensus) -> Result<()> {
         match msg {
             FastRoundPhase2bMessage(req) => self.handle_fast_round(&req).await?,
             _ => unimplemented!(),
@@ -159,16 +163,18 @@ impl FastPaxos {
         Err(Error::fast_round_failure())
     }
 
-    fn on_decide(&mut self, _hosts: Vec<Endpoint>) -> Result<()> {
+    fn on_decide(&mut self, _hosts: Vec<Endpoint>) {
         // This is the only place where the value is set to `true`.
         self.decided.store(true, Ordering::SeqCst);
 
+        // Cancel the schduled paxos round 1a
         if let Some(cancel_tx) = self.cancel_tx.take() {
             cancel_tx.send(()).unwrap();
         }
 
-        // TODO: surface decision to membership
-        Ok(())
+        let task = async { proposal };
+
+        self.scheduler.push(task);
     }
 
     pub async fn start_classic_round(&mut self) -> Result<()> {

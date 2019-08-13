@@ -25,7 +25,7 @@ use view::View;
 type OutboundResponse = oneshot::Sender<crate::Result<Response>>;
 
 #[derive(Debug)]
-pub struct Membership<M> {
+pub struct Membership<'sched, M> {
     host_addr: Endpoint,
     view: View,
     cut_detector: CutDetector,
@@ -35,7 +35,7 @@ pub struct Membership<M> {
     joiners_to_respond: HashMap<Endpoint, VecDeque<OutboundResponse>>,
     current_config_id: ConfigId,
     batch_window: Duration,
-    paxos: FastPaxos,
+    paxos: FastPaxos<'sched>,
 }
 
 impl<M: Monitor> Membership<M> {
@@ -52,12 +52,7 @@ impl<M: Monitor> Membership<M> {
             .collect()
     }
 
-    pub async fn handle_message(
-        &mut self,
-        request: Request,
-        response_tx: OutboundResponse,
-        _scheduler: &mut Scheduler,
-    ) {
+    pub async fn handle_message(&mut self, request: Request, response_tx: OutboundResponse) {
         use proto::RequestKind::*;
         let (_target, kind) = request.into_parts();
 
@@ -194,5 +189,9 @@ impl<M: Monitor> Membership<M> {
     pub fn enqueue_alert(&mut self, alert: proto::Alert) {
         self.last_enqueued_alert = Instant::now();
         self.alerts.push_back(alert);
+    }
+
+    pub async fn on_decide(&mut self, proposal: Vec<Endpoint>) {
+        unimplemented!()
     }
 }

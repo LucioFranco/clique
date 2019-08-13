@@ -25,6 +25,8 @@ pub(crate) enum ErrorKind {
     FastRoundFailure,
 
     JoinPhase2,
+
+    UnableToReachDecision,
 }
 
 impl Error {
@@ -77,6 +79,10 @@ impl Error {
 
     pub(crate) fn new_join_phase2() -> Self {
         Self::new(ErrorKind::JoinPhase2, None)
+    }
+
+    pub(crate) fn new_unable_to_reach_decision() -> Self {
+        Self::new(ErrorKind::UnableToReachDecision, None)
     }
 }
 

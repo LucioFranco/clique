@@ -32,6 +32,7 @@ pub struct Paxos {
     crnd: Rank,
     /// The value we have picked for a given round `i`
     cval: Vec<Endpoint>,
+    // The config ID we are working with.
     config_id: ConfigId,
     phase_1b_messages: Vec<Phase1bMessage>,
     phase_2a_messages: Vec<Phase2aMessage>,
@@ -205,7 +206,10 @@ impl Paxos {
     }
 
     #[allow(dead_code)]
-    pub(crate) async fn handle_phase_2b(&mut self, request: Phase2bMessage) -> crate::Result<()> {
+    pub(crate) async fn handle_phase_2b(
+        &mut self,
+        request: Phase2bMessage,
+    ) -> crate::Result<Vec<Endpoint>> {
         let Phase2bMessage {
             config_id,
             rnd,
@@ -223,12 +227,14 @@ impl Paxos {
             .or_insert_with(HashMap::new);
 
         if phase_2b_messages_in_rnd.len() > (self.size / 2) && !self.decided {
-            let _decision = endpoints;
+            let decision = endpoints;
             // TODO: let caller know of decision
             self.decided = true;
+
+            return Ok(decision);
         }
 
-        Ok(())
+        Err(Error::new_unable_to_reach_decision())
     }
 }
 

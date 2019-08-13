@@ -91,7 +91,7 @@ impl FastPaxos {
             cancel.send(()).unwrap();
         }
 
-        let kind = proto::RequestKind::Consensus(proto::Consensus::FastRoundPhase2bMessage(
+        let kind = proto::RequestKind::Consensus(FastRoundPhase2bMessage(
             proto::FastRoundPhase2bMessage {
                 sender: self.my_addr.clone(),
                 config_id: self.config_id,
@@ -122,7 +122,13 @@ impl FastPaxos {
     ) -> Result<()> {
         match msg {
             FastRoundPhase2bMessage(req) => self.handle_fast_round(&req, scheduler).await?,
-            _ => unimplemented!(),
+            Phase1aMessage(req) => self.paxos.handle_phase_1a(req).await?,
+            Phase1bMessage(req) => self.paxos.handle_phase_1b(req).await?,
+            Phase2aMessage(req) => self.paxos.handle_phase_2a(req).await?,
+            Phase2bMessage(req) => {
+                let proposal = self.paxos.handle_phase_2b(req).await?;
+                self.on_decide(proposal, scheduler);
+            }
         };
 
         Ok(())

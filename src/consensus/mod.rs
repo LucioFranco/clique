@@ -5,7 +5,7 @@ use crate::{
     error::{Error, Result},
     transport::{
         proto::{self, Consensus, Consensus::*},
-        Client, Response,
+        Client,
     },
 };
 use futures::FutureExt;
@@ -91,7 +91,7 @@ impl FastPaxos {
             cancel.send(()).unwrap();
         }
 
-        let kind = proto::RequestKind::Consensus(proto::Consensus::FastRoundPhase2bMessage(
+        let kind = proto::RequestKind::Consensus(FastRoundPhase2bMessage(
             proto::FastRoundPhase2bMessage {
                 sender: self.my_addr.clone(),
                 config_id: self.config_id,
@@ -115,18 +115,29 @@ impl FastPaxos {
     /// * `AlreadyReachedConsensus`: If this is called after the cluster has already reached
     /// consensus.
     /// * `FastRoundFailure`: If fast paxos is unable to reach consensus
-    pub async fn handle_message(&mut self, msg: Consensus) -> Result<Response> {
+    pub async fn handle_message(
+        &mut self,
+        msg: Consensus,
+        scheduler: &mut Scheduler,
+    ) -> Result<()> {
         match msg {
-            FastRoundPhase2bMessage(req) => self.handle_fast_round(&req).await?,
-            _ => unimplemented!(),
+            FastRoundPhase2bMessage(req) => self.handle_fast_round(&req, scheduler).await?,
+            Phase1aMessage(req) => self.paxos.handle_phase_1a(req).await?,
+            Phase1bMessage(req) => self.paxos.handle_phase_1b(req).await?,
+            Phase2aMessage(req) => self.paxos.handle_phase_2a(req).await?,
+            Phase2bMessage(req) => {
+                let proposal = self.paxos.handle_phase_2b(req).await?;
+                self.on_decide(proposal, scheduler);
+            }
         };
 
-        Ok(Response::consensus())
+        Ok(())
     }
 
     async fn handle_fast_round(
         &mut self,
         request: &proto::FastRoundPhase2bMessage,
+        scheduler: &mut Scheduler,
     ) -> crate::Result<()> {
         if request.config_id != self.config_id {
             return Err(Error::new_unexpected_request(None));
@@ -153,22 +164,24 @@ impl FastPaxos {
         if self.votes_received.len() >= (self.size as f64 - f) as usize
             && *count >= (self.size as f64 - f) as usize
         {
-            return self.on_decide(request.endpoints.clone());
+            return Ok(self.on_decide(request.endpoints.clone(), scheduler));
         }
 
         Err(Error::fast_round_failure())
     }
 
-    fn on_decide(&mut self, _hosts: Vec<Endpoint>) -> Result<()> {
+    fn on_decide(&mut self, proposal: Vec<Endpoint>, scheduler: &mut Scheduler) {
         // This is the only place where the value is set to `true`.
         self.decided.store(true, Ordering::SeqCst);
 
+        // Cancel the schduled paxos round 1a
         if let Some(cancel_tx) = self.cancel_tx.take() {
             cancel_tx.send(()).unwrap();
         }
 
-        // TODO: surface decision to membership
-        Ok(())
+        let task = async move { SchedulerEvents::Decision(proposal) };
+
+        scheduler.push(Box::pin(task));
     }
 
     pub async fn start_classic_round(&mut self) -> Result<()> {

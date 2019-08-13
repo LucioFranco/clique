@@ -56,7 +56,7 @@ impl<M: Monitor> Membership<M> {
         &mut self,
         request: Request,
         response_tx: OutboundResponse,
-        _scheduler: &mut Scheduler,
+        scheduler: &mut Scheduler,
     ) {
         use proto::RequestKind::*;
         let (_target, kind) = request.into_parts();
@@ -70,8 +70,10 @@ impl<M: Monitor> Membership<M> {
                 self.handle_join(msg, response_tx).await;
             }
             Consensus(msg) => {
-                let res = self.paxos.handle_message(msg).await;
-                response_tx.send(res).unwrap();
+                let res = self.paxos.handle_message(msg, scheduler).await;
+                if let Err(_e) = res {
+                    unimplemented!()
+                }
             }
             _ => unimplemented!(),
         };
@@ -194,5 +196,9 @@ impl<M: Monitor> Membership<M> {
     pub fn enqueue_alert(&mut self, alert: proto::Alert) {
         self.last_enqueued_alert = Instant::now();
         self.alerts.push_back(alert);
+    }
+
+    pub async fn on_decide(&mut self, _proposal: Vec<Endpoint>) {
+        unimplemented!()
     }
 }

@@ -16,6 +16,8 @@ pub enum SchedulerEvents {
     StartClassicRound,
     /// An event that has no return type
     None,
+    /// An event to surface consensus decision
+    Decision(Vec<Endpoint>),
 }
 
 /// Represents the NodeId internall it is just a Uuid v4

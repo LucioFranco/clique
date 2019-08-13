@@ -148,7 +148,7 @@ where
                         SchedulerEvents::Decision(proposal) => {
                             self.membership.on_decide(proposal).await;
                             continue;
-                        },
+                        }
                         SchedulerEvents::None => continue,
                         _ => unimplemented!()
                     }

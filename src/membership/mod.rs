@@ -25,7 +25,7 @@ use view::View;
 type OutboundResponse = oneshot::Sender<crate::Result<Response>>;
 
 #[derive(Debug)]
-pub struct Membership<'sched, M> {
+pub struct Membership<M> {
     host_addr: Endpoint,
     view: View,
     cut_detector: CutDetector,
@@ -35,7 +35,7 @@ pub struct Membership<'sched, M> {
     joiners_to_respond: HashMap<Endpoint, VecDeque<OutboundResponse>>,
     current_config_id: ConfigId,
     batch_window: Duration,
-    paxos: FastPaxos<'sched>,
+    paxos: FastPaxos,
 }
 
 impl<M: Monitor> Membership<M> {
@@ -52,7 +52,12 @@ impl<M: Monitor> Membership<M> {
             .collect()
     }
 
-    pub async fn handle_message(&mut self, request: Request, response_tx: OutboundResponse) {
+    pub async fn handle_message(
+        &mut self,
+        request: Request,
+        response_tx: OutboundResponse,
+        scheduler: &mut Scheduler,
+    ) {
         use proto::RequestKind::*;
         let (_target, kind) = request.into_parts();
 
@@ -65,8 +70,10 @@ impl<M: Monitor> Membership<M> {
                 self.handle_join(msg, response_tx).await;
             }
             Consensus(msg) => {
-                let res = self.paxos.handle_message(msg).await;
-                response_tx.send(res).unwrap();
+                let res = self.paxos.handle_message(msg, scheduler).await;
+                if let Err(_e) = res {
+                    unimplemented!()
+                }
             }
             _ => unimplemented!(),
         };
@@ -191,7 +198,7 @@ impl<M: Monitor> Membership<M> {
         self.alerts.push_back(alert);
     }
 
-    pub async fn on_decide(&mut self, proposal: Vec<Endpoint>) {
+    pub async fn on_decide(&mut self, _proposal: Vec<Endpoint>) {
         unimplemented!()
     }
 }

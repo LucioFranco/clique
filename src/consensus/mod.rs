@@ -5,7 +5,7 @@ use crate::{
     error::{Error, Result},
     transport::{
         proto::{self, Consensus, Consensus::*},
-        Client, Response,
+        Client,
     },
 };
 use futures::FutureExt;
@@ -32,7 +32,7 @@ const BASE_DELAY: u64 = 1000;
 /// scheduled to be run after a random interval of time. The randomness is introduced so that
 /// multiple nodes do not start their own instances of paxos as coordinators.
 #[derive(Debug)]
-pub struct FastPaxos<'sched> {
+pub struct FastPaxos {
     client: Client,
     my_addr: Endpoint,
     size: usize,
@@ -42,18 +42,11 @@ pub struct FastPaxos<'sched> {
     votes_received: HashSet<Endpoint>, // should be a bitset?
     votes_per_proposal: HashMap<Vec<Endpoint>, usize>,
     cancel_tx: Option<oneshot::Sender<()>>,
-    scheduler: &'sched mut Scheduler,
 }
 
 impl FastPaxos {
     #[allow(dead_code)]
-    pub fn new(
-        my_addr: Endpoint,
-        size: usize,
-        client: Client,
-        config_id: ConfigId,
-        scheduler: &mut Scheduler,
-    ) -> FastPaxos {
+    pub fn new(my_addr: Endpoint, size: usize, client: Client, config_id: ConfigId) -> FastPaxos {
         FastPaxos {
             client: client.clone(),
             config_id,
@@ -64,7 +57,6 @@ impl FastPaxos {
             votes_received: HashSet::default(),
             votes_per_proposal: HashMap::default(),
             cancel_tx: None,
-            scheduler,
         }
     }
 
@@ -74,7 +66,11 @@ impl FastPaxos {
     ///
     /// Returns `NewBrokenPipe` if the broadcast was not sucessful
     #[allow(dead_code)]
-    pub async fn propose(&mut self, proposal: Vec<Endpoint>) -> Result<()> {
+    pub async fn propose(
+        &mut self,
+        proposal: Vec<Endpoint>,
+        scheduler: &mut Scheduler,
+    ) -> Result<()> {
         let mut paxos_delay = Delay::new(Instant::now() + self.get_random_delay()).fuse();
 
         let (tx, cancel_rx) = oneshot::channel();
@@ -87,7 +83,7 @@ impl FastPaxos {
             }
         };
 
-        self.scheduler.push(Box::pin(task));
+        scheduler.push(Box::pin(task));
 
         // Make sure to cancel the previous task if it's present. There is always only one instance
         // of a classic paxos round
@@ -119,18 +115,23 @@ impl FastPaxos {
     /// * `AlreadyReachedConsensus`: If this is called after the cluster has already reached
     /// consensus.
     /// * `FastRoundFailure`: If fast paxos is unable to reach consensus
-    pub async fn handle_message(&mut self, msg: Consensus) -> Result<()> {
+    pub async fn handle_message(
+        &mut self,
+        msg: Consensus,
+        scheduler: &mut Scheduler,
+    ) -> Result<()> {
         match msg {
-            FastRoundPhase2bMessage(req) => self.handle_fast_round(&req).await?,
+            FastRoundPhase2bMessage(req) => self.handle_fast_round(&req, scheduler).await?,
             _ => unimplemented!(),
         };
 
-        Ok(Response::consensus())
+        Ok(())
     }
 
     async fn handle_fast_round(
         &mut self,
         request: &proto::FastRoundPhase2bMessage,
+        scheduler: &mut Scheduler,
     ) -> crate::Result<()> {
         if request.config_id != self.config_id {
             return Err(Error::new_unexpected_request(None));
@@ -157,13 +158,13 @@ impl FastPaxos {
         if self.votes_received.len() >= (self.size as f64 - f) as usize
             && *count >= (self.size as f64 - f) as usize
         {
-            return self.on_decide(request.endpoints.clone());
+            return Ok(self.on_decide(request.endpoints.clone(), scheduler));
         }
 
         Err(Error::fast_round_failure())
     }
 
-    fn on_decide(&mut self, _hosts: Vec<Endpoint>) {
+    fn on_decide(&mut self, proposal: Vec<Endpoint>, scheduler: &mut Scheduler) {
         // This is the only place where the value is set to `true`.
         self.decided.store(true, Ordering::SeqCst);
 
@@ -172,9 +173,9 @@ impl FastPaxos {
             cancel_tx.send(()).unwrap();
         }
 
-        let task = async { proposal };
+        let task = async move { SchedulerEvents::Decision(proposal) };
 
-        self.scheduler.push(task);
+        scheduler.push(Box::pin(task));
     }
 
     pub async fn start_classic_round(&mut self) -> Result<()> {

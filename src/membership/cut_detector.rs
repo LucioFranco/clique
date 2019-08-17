@@ -47,8 +47,7 @@ impl CutDetector {
         }
     }
 
-    #[allow(dead_code)]
-    fn aggregate(&mut self, message: Alert) -> Vec<Endpoint> {
+    pub fn aggregate(&mut self, message: &Alert) -> Vec<Endpoint> {
         message
             .ring_number
             .iter()
@@ -64,7 +63,6 @@ impl CutDetector {
             .collect()
     }
 
-    #[allow(dead_code)]
     fn aggregate_for_proposal(
         &mut self,
         link_src: Endpoint,
@@ -134,7 +132,6 @@ impl CutDetector {
         vec![]
     }
 
-    #[allow(dead_code)]
     pub fn invalidate_failing_edges(&mut self, view: &mut View) -> Vec<Endpoint> {
         // link invalidation is only required when there are failing nodes
         if !self.seen_down_link_events {
@@ -180,8 +177,7 @@ impl CutDetector {
         proposals_to_return
     }
 
-    #[allow(dead_code)]
-    fn clear(&mut self) {
+    pub fn clear(&mut self) {
         self.reports_per_host.clear();
         self.proposal.clear();
         self.updates_in_progress = 0;
@@ -216,7 +212,7 @@ mod tests {
         let dst = String::from("127.0.0.2:2");
 
         for i in 0..HIGH - 1 {
-            let ret = cut_detector.aggregate(Alert::new(
+            let ret = cut_detector.aggregate(&Alert::new(
                 format!("127.0.0.1:{}", i + 1),
                 dst.clone(),
                 EdgeStatus::Up,
@@ -228,7 +224,7 @@ mod tests {
             assert_eq!(0, cut_detector.get_proposal_count());
         }
 
-        let ret = cut_detector.aggregate(Alert::new(
+        let ret = cut_detector.aggregate(&Alert::new(
             format!("127.0.0.1:{}", HIGH),
             dst,
             EdgeStatus::Up,
@@ -249,7 +245,7 @@ mod tests {
         let dst2 = String::from("127.0.0.2:3");
 
         for i in 0..HIGH - 1 {
-            let ret = cut_detector.aggregate(Alert::new(
+            let ret = cut_detector.aggregate(&Alert::new(
                 format!("127.0.0.1:{}", i + 1),
                 dst1.clone(),
                 EdgeStatus::Up,
@@ -262,7 +258,7 @@ mod tests {
         }
 
         for i in 0..HIGH - 1 {
-            let ret = cut_detector.aggregate(Alert::new(
+            let ret = cut_detector.aggregate(&Alert::new(
                 format!("127.0.0.1:{}", i + 1),
                 dst2.clone(),
                 EdgeStatus::Up,
@@ -274,7 +270,7 @@ mod tests {
             assert_eq!(0, cut_detector.get_proposal_count());
         }
 
-        let ret = cut_detector.aggregate(Alert::new(
+        let ret = cut_detector.aggregate(&Alert::new(
             format!("127.0.0.1:{}", HIGH),
             dst1,
             EdgeStatus::Up,
@@ -285,7 +281,7 @@ mod tests {
         assert_eq!(0, ret.len());
         assert_eq!(0, cut_detector.get_proposal_count());
 
-        let ret = cut_detector.aggregate(Alert::new(
+        let ret = cut_detector.aggregate(&Alert::new(
             format!("127.0.0.1:{}", HIGH),
             dst2,
             EdgeStatus::Up,
@@ -307,7 +303,7 @@ mod tests {
         let dst3 = String::from("127.0.0.2:4");
 
         for i in 0..HIGH - 1 {
-            let ret = cut_detector.aggregate(Alert::new(
+            let ret = cut_detector.aggregate(&Alert::new(
                 format!("127.0.0.1:{}", i + 1),
                 dst1.clone(),
                 EdgeStatus::Up,
@@ -320,7 +316,7 @@ mod tests {
         }
 
         for i in 0..HIGH - 1 {
-            let ret = cut_detector.aggregate(Alert::new(
+            let ret = cut_detector.aggregate(&Alert::new(
                 format!("127.0.0.1:{}", i + 1),
                 dst2.clone(),
                 EdgeStatus::Up,
@@ -333,7 +329,7 @@ mod tests {
         }
 
         for i in 0..HIGH - 1 {
-            let ret = cut_detector.aggregate(Alert::new(
+            let ret = cut_detector.aggregate(&Alert::new(
                 format!("127.0.0.1:{}", i + 1),
                 dst3.clone(),
                 EdgeStatus::Up,
@@ -345,7 +341,7 @@ mod tests {
             assert_eq!(0, cut_detector.get_proposal_count());
         }
 
-        let ret = cut_detector.aggregate(Alert::new(
+        let ret = cut_detector.aggregate(&Alert::new(
             format!("127.0.0.1:{}", HIGH),
             dst1,
             EdgeStatus::Up,
@@ -356,7 +352,7 @@ mod tests {
         assert_eq!(0, ret.len());
         assert_eq!(0, cut_detector.get_proposal_count());
 
-        let ret = cut_detector.aggregate(Alert::new(
+        let ret = cut_detector.aggregate(&Alert::new(
             format!("127.0.0.1:{}", HIGH),
             dst2,
             EdgeStatus::Up,
@@ -367,7 +363,7 @@ mod tests {
         assert_eq!(0, ret.len());
         assert_eq!(0, cut_detector.get_proposal_count());
 
-        let ret = cut_detector.aggregate(Alert::new(
+        let ret = cut_detector.aggregate(&Alert::new(
             format!("127.0.0.1:{}", HIGH),
             dst3,
             EdgeStatus::Up,
@@ -391,7 +387,7 @@ mod tests {
         let dst3 = String::from("127.0.0.2:4");
 
         for i in 0..HIGH - 1 {
-            let ret = cut_detector.aggregate(Alert::new(
+            let ret = cut_detector.aggregate(&Alert::new(
                 format!("127.0.0.1:{}", i + 1),
                 dst1.clone(),
                 EdgeStatus::Up,
@@ -404,7 +400,7 @@ mod tests {
         }
 
         for i in 0..HIGH - 1 {
-            let ret = cut_detector.aggregate(Alert::new(
+            let ret = cut_detector.aggregate(&Alert::new(
                 format!("127.0.0.1:{}", i + 1),
                 dst2.clone(),
                 EdgeStatus::Up,
@@ -417,7 +413,7 @@ mod tests {
         }
 
         for i in 0..HIGH - 1 {
-            let ret = cut_detector.aggregate(Alert::new(
+            let ret = cut_detector.aggregate(&Alert::new(
                 format!("127.0.0.1:{}", i + 1),
                 dst3.clone(),
                 EdgeStatus::Up,
@@ -430,7 +426,7 @@ mod tests {
         }
 
         // Add more reports for dst1 and dst3 past the HIGH boundary
-        cut_detector.aggregate(Alert::new(
+        cut_detector.aggregate(&Alert::new(
             format!("127.0.0.1:{}", HIGH),
             dst1.clone(),
             EdgeStatus::Up,
@@ -438,7 +434,7 @@ mod tests {
             (HIGH - 1).try_into().unwrap(),
         ));
 
-        let ret = cut_detector.aggregate(Alert::new(
+        let ret = cut_detector.aggregate(&Alert::new(
             format!("127.0.0.1:{}", HIGH + 1),
             dst1,
             EdgeStatus::Up,
@@ -449,7 +445,7 @@ mod tests {
         assert_eq!(0, ret.len());
         assert_eq!(0, cut_detector.get_proposal_count());
 
-        cut_detector.aggregate(Alert::new(
+        cut_detector.aggregate(&Alert::new(
             format!("127.0.0.1:{}", HIGH),
             dst3.clone(),
             EdgeStatus::Up,
@@ -457,7 +453,7 @@ mod tests {
             (HIGH - 1).try_into().unwrap(),
         ));
 
-        let ret = cut_detector.aggregate(Alert::new(
+        let ret = cut_detector.aggregate(&Alert::new(
             format!("127.0.0.1:{}", HIGH + 1),
             dst3,
             EdgeStatus::Up,
@@ -468,7 +464,7 @@ mod tests {
         assert_eq!(0, ret.len());
         assert_eq!(0, cut_detector.get_proposal_count());
 
-        let ret = cut_detector.aggregate(Alert::new(
+        let ret = cut_detector.aggregate(&Alert::new(
             format!("127.0.0.1:{}", HIGH + 1),
             dst2,
             EdgeStatus::Up,
@@ -492,7 +488,7 @@ mod tests {
         let dst3 = String::from("127.0.0.2:4");
 
         for i in 0..HIGH - 1 {
-            let ret = cut_detector.aggregate(Alert::new(
+            let ret = cut_detector.aggregate(&Alert::new(
                 format!("127.0.0.1:{}", i + 1),
                 dst1.clone(),
                 EdgeStatus::Up,
@@ -506,7 +502,7 @@ mod tests {
 
         // dst2 has < LOW updates
         for i in 0..LOW - 1 {
-            let ret = cut_detector.aggregate(Alert::new(
+            let ret = cut_detector.aggregate(&Alert::new(
                 format!("127.0.0.1:{}", i + 1),
                 dst2.clone(),
                 EdgeStatus::Up,
@@ -519,7 +515,7 @@ mod tests {
         }
 
         for i in 0..HIGH - 1 {
-            let ret = cut_detector.aggregate(Alert::new(
+            let ret = cut_detector.aggregate(&Alert::new(
                 format!("127.0.0.1:{}", i + 1),
                 dst3.clone(),
                 EdgeStatus::Up,
@@ -531,7 +527,7 @@ mod tests {
             assert_eq!(0, cut_detector.get_proposal_count());
         }
 
-        let ret = cut_detector.aggregate(Alert::new(
+        let ret = cut_detector.aggregate(&Alert::new(
             format!("127.0.0.1:{}", HIGH),
             dst1,
             EdgeStatus::Up,
@@ -542,7 +538,7 @@ mod tests {
         assert_eq!(0, ret.len());
         assert_eq!(0, cut_detector.get_proposal_count());
 
-        let ret = cut_detector.aggregate(Alert::new(
+        let ret = cut_detector.aggregate(&Alert::new(
             format!("127.0.0.1:{}", HIGH),
             dst3,
             EdgeStatus::Up,
@@ -569,7 +565,7 @@ mod tests {
 
                 // inner for loop because nested iterators make using mut references tricky
                 for num in 0..NUM {
-                    ret.extend(cut_detector.aggregate(Alert::new(
+                    ret.extend(cut_detector.aggregate(&Alert::new(
                         String::from("127.0.0.1:1"),
                         endpoint.clone(),
                         EdgeStatus::Up,
@@ -606,7 +602,7 @@ mod tests {
 
         // Add alerts from the observers [0, H-1) for dst alerting that dst is down
         for i in 0..HIGH - 1 {
-            let ret = cut_detector.aggregate(Alert::new(
+            let ret = cut_detector.aggregate(&Alert::new(
                 observers[i].clone(),
                 dst.clone(),
                 EdgeStatus::Down,
@@ -625,7 +621,7 @@ mod tests {
             failed_observers.insert(observers[i].clone());
 
             for j in 0..NUM {
-                let ret = cut_detector.aggregate(Alert::new(
+                let ret = cut_detector.aggregate(&Alert::new(
                     observers_of_observer[j].clone(),
                     observers[i].clone(),
                     EdgeStatus::Down,

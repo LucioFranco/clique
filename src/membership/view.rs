@@ -32,8 +32,8 @@ pub struct View {
 /// Represents the current configuration of the view.
 #[derive(Debug, Clone, Default)]
 pub struct Configuration {
-    node_ids: Vec<NodeId>,
-    endpoints: Vec<Endpoint>,
+    pub node_ids: Vec<NodeId>,
+    pub endpoints: Vec<Endpoint>,
 }
 
 #[allow(dead_code)]
@@ -199,6 +199,10 @@ impl View {
         }
 
         &mut self.current_config
+    }
+
+    pub fn get_current_config_id(&self) -> ConfigId {
+        self.current_config_id
     }
 
     /// Get the current size of the membership.

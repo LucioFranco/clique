@@ -47,8 +47,7 @@ impl CutDetector {
         }
     }
 
-    #[allow(dead_code)]
-    fn aggregate(&mut self, message: Alert) -> Vec<Endpoint> {
+    pub fn aggregate(&mut self, message: &Alert) -> Vec<Endpoint> {
         message
             .ring_number
             .iter()
@@ -64,7 +63,6 @@ impl CutDetector {
             .collect()
     }
 
-    #[allow(dead_code)]
     fn aggregate_for_proposal(
         &mut self,
         link_src: Endpoint,
@@ -134,7 +132,6 @@ impl CutDetector {
         vec![]
     }
 
-    #[allow(dead_code)]
     pub fn invalidate_failing_edges(&mut self, view: &mut View) -> Vec<Endpoint> {
         // link invalidation is only required when there are failing nodes
         if !self.seen_down_link_events {

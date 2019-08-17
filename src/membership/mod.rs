@@ -3,12 +3,15 @@ mod ring;
 mod view;
 
 use crate::{
-    common::{ConfigId, Endpoint, Scheduler, SchedulerEvents},
+    common::{ConfigId, Endpoint, NodeId, Scheduler, SchedulerEvents},
     consensus::FastPaxos,
     error::Result,
     monitor::Monitor,
     transport::{
-        proto::{self, JoinMessage, JoinResponse, JoinStatus, PreJoinMessage},
+        proto::{
+            self, Alert, BatchedAlertMessage, EdgeStatus, JoinMessage, JoinResponse, JoinStatus,
+            Metadata, PreJoinMessage,
+        },
         Client, Request, Response,
     },
 };
@@ -71,15 +74,14 @@ impl<M: Monitor> Membership<M> {
             Join(msg) => {
                 self.handle_join(msg, response_tx).await;
             }
-            BatchedAlertMessage(msg) => {
-                let res = self.handle_batched_alert_message(msg, scheduler).await?;
+            BatchedAlert(msg) => {
+                let res = self.handle_batched_alert_message(msg, scheduler).await;
                 if let Err(_e) = res {
                     unimplemented!()
                 }
             }
             Probe => {
-                let res = self.handle_probe_message();
-                response_tx.send(res);
+                response_tx.send(Ok(self.handle_probe_message())).unwrap();
             }
             Consensus(msg) => {
                 let res = self.paxos.handle_message(msg, scheduler).await;
@@ -87,7 +89,6 @@ impl<M: Monitor> Membership<M> {
                     unimplemented!()
                 }
             }
-            _ => unimplemented!(),
         };
     }
 
@@ -166,7 +167,7 @@ impl<M: Monitor> Membership<M> {
     }
 
     // Invoked by observers of a node for failure detection
-    fn handle_probe_message() -> Response {
+    fn handle_probe_message(&self) -> Response {
         Response::new_probe()
     }
 
@@ -179,19 +180,24 @@ impl<M: Monitor> Membership<M> {
         msg_batch: BatchedAlertMessage,
         scheduler: &mut Scheduler,
     ) -> Result<()> {
-        let current_config_id = self.view().get_config();
-        let size = self.view().get_membership_size();
+        let current_config_id = self.view.get_current_config_id();
+        let size = self.view.get_membership_size();
         let mut proposal: Vec<Endpoint> = msg_batch
-            .alerts()
+            .alerts
             .iter()
             // filter out messages which violate membership invariants
-            .filter(|message| self.filter_alert_messages(&msg_batch, message, size, config_id))
-            // Apply all valid messages to the cut detector to obtain a proposal
-            .map(self.cut_detector.aggregate)
+            // And then run the cut detector to see if there is a new proposal
+            .filter_map(|message| {
+                if !self.filter_alert_messages(&msg_batch, message, size, &current_config_id) {
+                    return None;
+                }
+
+                Some(self.cut_detector.aggregate(message))
+            })
             .flatten()
             .collect();
 
-        proposal.extend(self.cut_detector.invalidate_failing_edges(self.view));
+        proposal.extend(self.cut_detector.invalidate_failing_edges(&mut self.view));
 
         if !proposal.is_empty() {
             self.announced_proposal = true;
@@ -207,20 +213,21 @@ impl<M: Monitor> Membership<M> {
     // that were for a configuration that the current node is not a part of, and messages
     // that violate teh semantics of being a part of a configuration
     fn filter_alert_messages(
-        message_batch: &BatchedAlertMessage,
-        message: Alert,
-        size: usize,
-        config_id: ConfigId,
+        &mut self,
+        _message_batch: &BatchedAlertMessage, // Might require this later for loggign
+        message: &Alert,
+        _size: usize,
+        config_id: &ConfigId,
     ) -> bool {
-        let dst = message.dst;
+        let dst = &message.dst;
 
-        if config_id != message.config_id {
+        if *config_id != message.config_id {
             return false;
         }
 
         // An invariant to maintain is that a node can only go into the membership set once and leave
         // it once
-        if message.edge_status == EdgeStatus::Down && !self.view.is_host_present(dst) {
+        if message.edge_status == EdgeStatus::Down && !self.view.is_host_present(&dst) {
             return false;
         }
 

@@ -201,6 +201,10 @@ impl View {
         &mut self.current_config
     }
 
+    pub fn get_current_config_id(&self) -> ConfigId {
+        self.current_config_id
+    }
+
     /// Get the current size of the membership.
     pub fn get_membership_size(&self) -> usize {
         self.rings[0].len()

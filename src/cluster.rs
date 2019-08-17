@@ -146,7 +146,7 @@ where
                             continue;
                         },
                         SchedulerEvents::Decision(proposal) => {
-                            self.membership.on_decide(proposal).await;
+                            self.membership.on_decide(proposal).await?;
                             continue;
                         }
                         SchedulerEvents::None => continue,

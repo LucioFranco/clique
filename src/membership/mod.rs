@@ -290,7 +290,74 @@ impl<M: Monitor> Membership<M> {
         self.alerts.push_back(alert);
     }
 
-    pub async fn on_decide(&mut self, _proposal: Vec<Endpoint>) {
-        unimplemented!()
+    /// This is invoked when the consensus module decides on a proposal
+    ///
+    /// Any node that is not in the membership list will be added to the cluster,
+    /// and any node that is currently in the membership list, but not in the proposal
+    /// will be removed.
+    pub async fn on_decide(&mut self, proposal: Vec<Endpoint>) -> Result<()> {
+        // TODO: Set up a way to cancel failure detector jobs
+        // TODO: Handle metadata updates
+        // TODO: Handle subscriptions
+
+        for node in &proposal {
+            if self.view.is_host_present(&node) {
+                self.view.ring_delete(&node)?;
+            } else {
+                if let Some((node_id, _metadata)) = self.joiner_data.remove(node) {
+                    self.view.ring_add(node.clone(), node_id)?;
+                } else {
+                    panic!("Node not present in pre-join metadata")
+                }
+            }
+        }
+
+        let _current_config_id = self.view.get_current_config_id();
+
+        // clear data structures
+        self.cut_detector.clear();
+
+        self.announced_proposal = false;
+
+        // TODO: Instantiate new consensus instance
+        // self.paxos = FastPaxos::new(self.host_addr, self.view.get_membership_size(), )
+
+        if self.view.is_host_present(&self.host_addr) {
+            // TODO: inform edge failure detector about config change
+        } else {
+            // We need to gracefully exit by calling a user handler and invalidating the current
+            // session
+            unimplemented!()
+        }
+
+        self.respond_to_joiners(proposal);
+
+        Ok(())
+    }
+
+    fn respond_to_joiners(&mut self, proposal: Vec<Endpoint>) {
+        let configuration = self.view.get_config();
+
+        let join_res = JoinResponse {
+            sender: self.host_addr.clone(),
+            status: JoinStatus::SafeToJoin,
+            config_id: configuration.config_id(),
+            endpoints: configuration.endpoints.clone(),
+            identifiers: configuration.node_ids.clone(),
+            cluster_metadata: HashMap::new(), // TODO: metadata manager
+        };
+
+        for node in proposal {
+            self.joiners_to_respond.remove(&node).and_then(|joiners| {
+                joiners.into_iter().for_each(|joiner| {
+                    joiner
+                        .send(Ok(Response::new_join(join_res.clone())))
+                        .expect("Unable to send response");
+                });
+
+                // This is so the compiler can infer the type of the closure to be Option<()>
+                Some(())
+            });
+        }
     }
 }

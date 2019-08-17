@@ -177,8 +177,7 @@ impl CutDetector {
         proposals_to_return
     }
 
-    #[allow(dead_code)]
-    fn clear(&mut self) {
+    pub fn clear(&mut self) {
         self.reports_per_host.clear();
         self.proposal.clear();
         self.updates_in_progress = 0;

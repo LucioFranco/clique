@@ -32,8 +32,8 @@ pub struct View {
 /// Represents the current configuration of the view.
 #[derive(Debug, Clone, Default)]
 pub struct Configuration {
-    node_ids: Vec<NodeId>,
-    endpoints: Vec<Endpoint>,
+    pub node_ids: Vec<NodeId>,
+    pub endpoints: Vec<Endpoint>,
 }
 
 #[allow(dead_code)]

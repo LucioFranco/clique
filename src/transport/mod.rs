@@ -83,4 +83,9 @@ impl Response {
         let kind = proto::ResponseKind::Join(join);
         Self::new(kind)
     }
+
+    pub fn new_probe() -> Self {
+        let kind = proto::ResponseKind::Probe;
+        Self::new(kind)
+    }
 }

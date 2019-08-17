@@ -36,6 +36,8 @@ pub struct Membership<M> {
     current_config_id: ConfigId,
     batch_window: Duration,
     paxos: FastPaxos,
+    announced_proposal: bool,
+    joiner_data: HashMap<Endpoint, (NodeId, Metadata)>,
 }
 
 impl<M: Monitor> Membership<M> {
@@ -68,6 +70,16 @@ impl<M: Monitor> Membership<M> {
             }
             Join(msg) => {
                 self.handle_join(msg, response_tx).await;
+            }
+            BatchedAlertMessage(msg) => {
+                let res = self.handle_batched_alert_message(msg, scheduler).await?;
+                if let Err(_e) = res {
+                    unimplemented!()
+                }
+            }
+            Probe => {
+                let res = self.handle_probe_message();
+                response_tx.send(res);
             }
             Consensus(msg) => {
                 let res = self.paxos.handle_message(msg, scheduler).await;
@@ -151,6 +163,79 @@ impl<M: Monitor> Membership<M> {
                 unimplemented!()
             };
         }
+    }
+
+    // Invoked by observers of a node for failure detection
+    fn handle_probe_message() -> Response {
+        Response::new_probe()
+    }
+
+    // Receives edge update events and delivers them to the cut detector to check if it will
+    // return a valid proposal.
+    //
+    // Edge update messages that do not affect the ongoing proposal need to be dropped.
+    async fn handle_batched_alert_message(
+        &mut self,
+        msg_batch: BatchedAlertMessage,
+        scheduler: &mut Scheduler,
+    ) -> Result<()> {
+        let current_config_id = self.view().get_config();
+        let size = self.view().get_membership_size();
+        let mut proposal: Vec<Endpoint> = msg_batch
+            .alerts()
+            .iter()
+            // filter out messages which violate membership invariants
+            .filter(|message| self.filter_alert_messages(&msg_batch, message, size, config_id))
+            // Apply all valid messages to the cut detector to obtain a proposal
+            .map(self.cut_detector.aggregate)
+            .flatten()
+            .collect();
+
+        proposal.extend(self.cut_detector.invalidate_failing_edges(self.view));
+
+        if !proposal.is_empty() {
+            self.announced_proposal = true;
+            // TODO: notify subscription of view change proposal
+
+            self.paxos.propose(proposal, scheduler).await?
+        }
+
+        Ok(())
+    }
+
+    // Filter for removing invalid edge update messages. These include messages
+    // that were for a configuration that the current node is not a part of, and messages
+    // that violate teh semantics of being a part of a configuration
+    fn filter_alert_messages(
+        message_batch: &BatchedAlertMessage,
+        message: Alert,
+        size: usize,
+        config_id: ConfigId,
+    ) -> bool {
+        let dst = message.dst;
+
+        if config_id != message.config_id {
+            return false;
+        }
+
+        // An invariant to maintain is that a node can only go into the membership set once and leave
+        // it once
+        if message.edge_status == EdgeStatus::Down && !self.view.is_host_present(dst) {
+            return false;
+        }
+
+        if message.edge_status == EdgeStatus::Up {
+            // Add joiner data after the node is done being added to the set. Store in a temp location for now.
+            self.joiner_data.insert(
+                dst.clone(),
+                (
+                    message.node_id.clone().take().unwrap(),
+                    message.metadata.clone().take().unwrap(),
+                ),
+            );
+        }
+
+        true
     }
 
     pub fn create_failure_detectors(

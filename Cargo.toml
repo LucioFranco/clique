@@ -23,7 +23,7 @@ rand = "0.7.0"
 tracing = { version = "0.1", features = ["async-await"] }
 tracing-futures = "0.0.0"
 tracing-attributes = "0.1.0"
-tracing-fmt = { git = "https://github.com/tokio-rs/tracing" }
+tracing-fmt = "0.1.1"
 
 [dev-dependencies]
 tokio = { version = "=0.2.0-alpha.1", features = ["rt-full"] }

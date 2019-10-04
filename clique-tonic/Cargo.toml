@@ -1,0 +1,18 @@
+[package]
+name = "clique-tonic"
+version = "0.1.0"
+authors = ["Bhargav Voleti <bhargav.voleti93@gmail.com"]
+edition = "2018"
+publish = false
+
+[dependencies]
+clique = { path = ".." }
+tonic = { path = "../../tonic/tonic" }
+prost = "0.5"
+prost-derive = "0.5"
+bytes = "0.4"
+tokio = "=0.2.0-alpha.4"
+
+
+[build-dependencies]
+tonic-build = { path = "../../tonic/tonic-build", features=["rustfmt"]}

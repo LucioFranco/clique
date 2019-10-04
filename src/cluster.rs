@@ -92,7 +92,10 @@ where
 {
     #![allow(dead_code)]
     async fn new(mut transport: T, listen_target: Target, event_tx: watch::Sender<Event>) -> Self {
-        let server_stream = transport.listen_on(listen_target.clone()).await.unwrap();
+        let server_stream = transport
+            .listen_on(listen_target.clone())
+            .await
+            .unwrap_or_else(|e| panic!("Unable to start server: {:?}", e));
 
         let (client, client_stream) = Client::new(100);
 
@@ -172,18 +175,14 @@ where
 
     async fn handle_server(
         &mut self,
-        request: std::result::Result<(Request, oneshot::Sender<crate::Result<Response>>), T::Error>,
+        request: (Request, oneshot::Sender<crate::Result<Response>>),
     ) -> Result<()> {
-        match request {
-            Ok((request, response_tx)) => {
-                self.membership
-                    .handle_message(request, response_tx, &mut self.scheduler)
-                    .await;
+        let (request, response_tx) = request;
+        self.membership
+            .handle_message(request, response_tx, &mut self.scheduler)
+            .await;
 
-                Ok(())
-            }
-            Err(e) => Err(Error::new_join(Some(Box::new(e)))),
-        }
+        Ok(())
     }
 
     // Need this to be a boxed futures since we want to send these tasks into

@@ -16,7 +16,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio_sync::oneshot;
-use tokio_timer::Delay;
+use tokio_timer::delay;
 
 use paxos::Paxos;
 
@@ -71,7 +71,7 @@ impl FastPaxos {
         proposal: Vec<Endpoint>,
         scheduler: &mut Scheduler,
     ) -> Result<()> {
-        let mut paxos_delay = Delay::new(Instant::now() + self.get_random_delay()).fuse();
+        let mut paxos_delay = delay(Instant::now() + self.get_random_delay()).fuse();
 
         let (tx, cancel_rx) = oneshot::channel();
         let mut cancel_rx = cancel_rx.fuse();

@@ -9,6 +9,7 @@ pub struct Error {
     source: Option<Source>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) enum ErrorKind {
     Start,
@@ -43,6 +44,7 @@ impl Error {
         Self::new(ErrorKind::BrokenPipe, source)
     }
 
+    #[allow(dead_code)]
     pub(crate) fn new_join(source: Option<Source>) -> Self {
         Self::new(ErrorKind::Join, source)
     }

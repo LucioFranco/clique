@@ -6,7 +6,7 @@ use crate::{
 use futures::{future, FutureExt};
 use std::time::{Duration, Instant};
 use tokio_sync::mpsc;
-use tokio_timer::{Delay, Timeout};
+use tokio_timer::{delay, Timeout};
 
 #[derive(Debug)]
 pub struct PingPong {
@@ -47,7 +47,7 @@ impl Monitor for PingPong {
                     return;
                 }
 
-                Delay::new(Instant::now() + tick_delay).await;
+                delay(Instant::now() + tick_delay).await;
             }
         }
             .boxed()

@@ -15,9 +15,8 @@ pub trait Transport<T> {
 
     fn send(&mut self, req: Request) -> Self::ClientFuture;
 
-    type ServerStream: Stream<
-            Item = Result<(Request, oneshot::Sender<crate::Result<Response>>), Self::Error>,
-        > + Send
+    type ServerStream: Stream<Item = (Request, oneshot::Sender<crate::Result<Response>>)>
+        + Send
         + Unpin;
     type ServerFuture: Future<Output = Result<Self::ServerStream, Self::Error>>;
 

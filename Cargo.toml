@@ -9,15 +9,15 @@ edition = "2018"
 publish = false
 
 [workspace]
-members = ["clique-grpc"]
+members = ["clique-tonic"]
 
 [dependencies]
 bytes = "0.4"
-futures = { version = "=0.3.0-alpha.17", package = "futures-preview", features = ["async-await", "nightly", "io-compat", "compat"] }
+futures = { version = "=0.3.0-alpha.19", package = "futures-preview", features = ["async-await", "io-compat", "compat"] }
 uuid = { version = "0.7", features = ["serde", "v4"] }
 serde = "1.0"
-tokio-sync = "=0.2.0-alpha.1"
-tokio-timer = "=0.3.0-alpha.1"
+tokio-sync = "=0.2.0-alpha.6"
+tokio-timer = "=0.3.0-alpha.6"
 twox-hash = "1.4"
 rand = "0.7.0"
 tracing = { version = "0.1", features = ["async-await"] }
@@ -26,4 +26,4 @@ tracing-attributes = "0.1.0"
 tracing-fmt = "0.1.1"
 
 [dev-dependencies]
-tokio = { version = "=0.2.0-alpha.1", features = ["rt-full"] }
+tokio = { version = "=0.2.0-alpha.6", features = ["rt-full"] }

@@ -1,4 +1,3 @@
-#![feature(async_await)]
 #![recursion_limit = "512"]
 // #![deny(missing_docs, missing_debug_implementations, rust_2018_idioms)]
 // #![cfg_attr(test, deny(warnings))]

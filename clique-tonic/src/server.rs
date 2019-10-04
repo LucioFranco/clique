@@ -26,11 +26,11 @@ impl GrpcServer {
     fn new() -> Self {
         let (msg_tx, msg_rx) = mpsc::channel();
 
-        Self { msg_tx, msg_rx }
+        Self { msg_tx, msg_rx: Some(msg_rx) }
     }
 
 
-    fn create(&mut self, target: String) -> mpsc::Receiver<Request<RapidRequest>>{
+    fn create(&mut self, target: String) -> mpsc::Receiver<Request<TransportItem>>{
         let addr = target.parse::<ToSocketAddr>().expect("Unable to parse server address");
 
         let membership = GrpcServer::new();
@@ -46,15 +46,10 @@ impl GrpcServer {
         };
 
         tokio::spawn(task.map(|_| ()).map_err(|e| panic!("Server crashed on: {:?}", e)));
-
         msg_rx
-
     }
 
     fn get_rx(&mut self) -> mpsc::Receiver<Request<RapidRequest>> {
         self.msg_rx.take().expect("Unable to return server stream")
     }
-
 }
-
-

@@ -15,4 +15,4 @@ tokio = "=0.2.0-alpha.6"
 
 
 [build-dependencies]
-tonic-build = { version = "0.1.0-alpha.1", features=["rustfmt"]}
+tonic-build = "0.1.0-alpha.1"

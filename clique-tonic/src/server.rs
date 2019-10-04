@@ -32,9 +32,7 @@ impl GrpcServer {
 
     fn create(&mut self, target: String) -> mpsc::Receiver<Request<TransportItem>>{
         let addr = target.parse::<ToSocketAddr>().expect("Unable to parse server address");
-
         let membership = GrpcServer::new();
-
         let msg_rx = membership.get_rx();
 
         let task = async move {

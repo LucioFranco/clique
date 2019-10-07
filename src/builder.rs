@@ -1,8 +1,7 @@
 use crate::{
-    cluster::Cluster, cluster::Inner, error::Result, event::Event, handle::Handle,
+    cluster::Cluster, cluster::Inner, event::Event, handle::Handle,
     transport::Transport,
 };
-use std::marker::PhantomData;
 
 use tokio_sync::watch;
 
@@ -48,5 +47,5 @@ where
     pub fn target(mut self, target: Target) -> Self {
         self.target = Some(target);
         self
-    }
+}
 }

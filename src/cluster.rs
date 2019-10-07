@@ -22,16 +22,7 @@ where
     T: Transport<Target>,
 {
     handle: Handle,
-    inner: State<T, Target>,
-}
-
-#[allow(dead_code)]
-enum State<T, Target>
-where
-    T: Transport<Target>,
-{
-    Idle(Builder<T, Target>),
-    Running(Inner<T, Target>),
+    inner: Inner<T, Target>,
 }
 
 impl<T, Target> Cluster<T, Target>
@@ -39,8 +30,11 @@ where
     T: Transport<Target> + Send,
     Target: Into<Endpoint> + Send + Clone,
 {
+    pub(crate) fn new(handle: Handle, inner: Inner<T, Target>) -> Self {
+        Cluster { handle, inner }
+    }
     pub fn builder() -> Builder<T, Target> {
-        unimplemented!()
+        Builder::new()
     }
 
     pub fn handle(&self) -> Handle {
@@ -48,21 +42,15 @@ where
     }
 
     pub async fn start(&mut self) -> Result<()> {
-        match &mut self.inner {
-            State::Running(inner) => inner.start().await,
-            _ => unreachable!(),
-        }
+        self.inner.start().await
     }
 
     pub async fn join(&mut self, seed_addr: Target) -> Result<()> {
-        match &mut self.inner {
-            State::Running(inner) => inner.join(seed_addr).await,
-            _ => unreachable!(),
-        }
+        self.inner.join(seed_addr).await
     }
 }
 
-struct Inner<T, Target>
+pub(crate) struct Inner<T, Target>
 where
     T: Transport<Target>,
 {
@@ -91,7 +79,11 @@ where
     Target: Into<Endpoint> + Send + Clone,
 {
     #![allow(dead_code)]
-    async fn new(mut transport: T, listen_target: Target, event_tx: watch::Sender<Event>) -> Self {
+    pub(crate) async fn new(
+        mut transport: T,
+        listen_target: Target,
+        event_tx: watch::Sender<Event>,
+    ) -> Self {
         let server_stream = transport
             .listen_on(listen_target.clone())
             .await

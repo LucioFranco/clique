@@ -11,6 +11,12 @@ pub struct Handle {
     event_rx: watch::Receiver<Event>,
 }
 
+impl Handle {
+    pub fn new(event_rx: watch::Receiver<Event>) -> Self {
+        Handle { event_rx }
+    }
+}
+
 impl Stream for Handle {
     type Item = Event;
 

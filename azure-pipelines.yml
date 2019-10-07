@@ -6,7 +6,7 @@ jobs:
 - template: ci/azure-rustfmt.yml
   parameters:
     name: rustfmt
-    rust_version: nightly-2019-07-09
+    rust_version: beta
 
 - job: test
   displayName: Test

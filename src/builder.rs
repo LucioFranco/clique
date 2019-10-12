@@ -1,7 +1,4 @@
-use crate::{
-    cluster::Cluster, cluster::Inner, event::Event, handle::Handle,
-    transport::Transport,
-};
+use crate::{cluster::Cluster, cluster::Inner, event::Event, handle::Handle, transport::Transport};
 
 use tokio_sync::watch;
 
@@ -47,5 +44,5 @@ where
     pub fn target(mut self, target: Target) -> Self {
         self.target = Some(target);
         self
-}
+    }
 }

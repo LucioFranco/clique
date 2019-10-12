@@ -8,7 +8,7 @@ use futures::Stream;
 use std::future::Future;
 use tokio_sync::oneshot;
 
-pub type StreamItem = (Request, oneshot::SEnder<crate::Result<Response>>);
+pub type StreamItem = (Request, oneshot::Sender<crate::Result<Response>>);
 
 pub trait Transport<T> {
     type Error: std::error::Error + Send + 'static;

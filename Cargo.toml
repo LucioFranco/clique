@@ -9,7 +9,7 @@ edition = "2018"
 publish = false
 
 [workspace]
-members = ["clique-tonic", "simulator"]
+members = ["clique-tonic", "simulator", "integ-tests"]
 
 [dependencies]
 bytes = "0.4"

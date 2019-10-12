@@ -1,8 +1,8 @@
-#[derive(Debug, PartialEq, Clone)]
-pub struct Event;
+use crate::common::Endpoint;
 
-impl Event {
-    pub fn new() -> Self {
-        Event
-    }
+#[derive(Debug, PartialEq, Clone)]
+pub enum Event {
+    Members(Vec<Endpoint>),
+    Join(Endpoint),
+    Leave(Endpoint),
 }

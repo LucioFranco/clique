@@ -1,3 +1,5 @@
+use std::pin::Pin;
+
 use clique::transport;
 use futures::{future, Future, TryFutureExt, FutureExt};
 use tokio::sync::mpsc;
@@ -17,7 +19,7 @@ where
     T: Into<String>,
 {
     type Error = crate::Error;
-    type ClientFuture = Box<dyn Future<Output = Result<clique::transport::Response, crate::Error>>>;
+    type ClientFuture = Pin<Box<dyn Future<Output = Result<clique::transport::Response, crate::Error>>>>;
 
     fn send(&mut self, req: transport::Request) -> Self::ClientFuture {
         let transport::Request{target, kind } = req;
@@ -35,14 +37,14 @@ where
                 .map(|res| res.into_inner().into())
         };
 
-        Box::new(task)
+        Box::pin(task)
     }
 
     type ServerFuture = future::Ready<Result<Self::ServerStream, Self::Error>>;
     type ServerStream = mpsc::Receiver<TransportItem>;
 
     fn listen_on(&mut self, bind: T) -> Self::ServerFuture {
-        let stream = self.server.create(bind);
+        let stream = self.server.create(bind.into());
         future::ready(Ok(stream))
     }
 }

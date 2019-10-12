@@ -29,7 +29,7 @@ impl From<Response> for membership::RapidResponse {
 }
 
 impl From<proto::RequestKind> for membership::RapidRequest {
-    fn from(_r: Request) -> Self {
+    fn from(_r: proto::RequestKind) -> Self {
         unimplemented!()
     }
 }

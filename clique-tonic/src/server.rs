@@ -11,7 +11,7 @@ use crate::{Error, membership::{server::{Membership, MembershipServer}, RapidReq
 
 pub(crate) type TransportItem = (transport::Request, oneshot::Sender<clique::Result<transport::Response>>);
 
-pub struct GrpcServer {
+pub(crate) struct GrpcServer {
     req_tx: mpsc::Sender<TransportItem>,
     req_rx: Option<mpsc::Receiver<TransportItem>>,
 }
@@ -49,7 +49,7 @@ impl GrpcServer {
     }
 
 
-    fn create(&mut self, target: String) -> mpsc::Receiver<TransportItem> {
+    pub fn create(&mut self, target: String) -> mpsc::Receiver<TransportItem> {
         let addr = target.parse().expect("Unable to parse server address");
         let membership = GrpcServer::new();
 

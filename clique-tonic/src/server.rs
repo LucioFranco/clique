@@ -25,7 +25,7 @@ impl Membership for GrpcServer {
             .clone()
             .send((req.into_inner().into(), res_tx))
             .await
-            .map_err(|e| eprintln!("Unable to send request: {:?}", e));
+            .map_err(|e| tonic::Status::new(tonic::Code::Unknown, format!("Unable to send request: {:?}", e)))?;
         
         let response = res_rx.await.map_err(|e| tonic::Status::new(tonic::Code::Unknown, format!("Channel receive error: {:?}", e)))?;
 
@@ -42,7 +42,7 @@ impl Membership for GrpcServer {
 }
 
 impl GrpcServer {
-    fn new() -> Self {
+    pub fn new() -> Self {
         let (req_tx, req_rx) = mpsc::channel(100);
 
         Self { req_tx, req_rx: Some(req_rx) }

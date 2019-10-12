@@ -19,17 +19,17 @@ where
     T: Into<String>,
 {
     type Error = crate::Error;
-    type ClientFuture = Pin<Box<dyn Future<Output = Result<clique::transport::Response, crate::Error>>>>;
+    type ClientFuture = Pin<Box<dyn Future<Output = Result<clique::transport::Response, crate::Error>> + Send + 'static>>;
 
     fn send(&mut self, req: transport::Request) -> Self::ClientFuture {
-        let transport::Request{target, kind } = req;
+        let (target, kind) = req.into_parts();
 
-        let channel = Channel::from_static(&target).channel();
+        let channel = Channel::from_shared(target.as_bytes()).unwrap().channel();
         let mut client = MembershipClient::new(channel);
 
         let req = Request::new(kind.into());
 
-        let task = async {
+        let task = async move {
             client
                 .send_request(req)
                 .await
@@ -46,5 +46,11 @@ where
     fn listen_on(&mut self, bind: T) -> Self::ServerFuture {
         let stream = self.server.create(bind.into());
         future::ready(Ok(stream))
+    }
+}
+
+impl TonicTransport {
+    pub fn new() -> Self {
+        TonicTransport { server: GrpcServer::new() }
     }
 }

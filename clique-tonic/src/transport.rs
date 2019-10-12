@@ -1,10 +1,7 @@
 use clique::transport;
-use futures::{future, Future};
+use futures::{future, Future, TryFutureExt, FutureExt};
 use tokio::sync::mpsc;
-use tonic::{
-    transport::{channel::ResponseFuture, Channel},
-    Request, Response,
-};
+use tonic::{transport::Channel, Request, Response};
 
 use crate::{
     membership::{client::MembershipClient, RapidRequest},
@@ -12,7 +9,6 @@ use crate::{
 };
 
 pub struct TonicTransport {
-    client: MembershipClient<RapidRequest>,
     server: GrpcServer,
 }
 
@@ -24,14 +20,22 @@ where
     type ClientFuture = Box<dyn Future<Output = Result<clique::transport::Response, crate::Error>>>;
 
     fn send(&mut self, req: transport::Request) -> Self::ClientFuture {
-        let req = Request::new(req.into_inner().into());
-        Box::new(async {
-            self.client
-            .send_request(req)
-            .await
-            .map_err(|_| crate::Error::Upstream)?
-            .into_inner()
-        })
+        let transport::Request{target, kind } = req;
+
+        let channel = Channel::from_static(&target).channel();
+        let mut client = MembershipClient::new(channel);
+
+        let req = Request::new(kind.into());
+
+        let task = async {
+            client
+                .send_request(req)
+                .await
+                .map_err(|_| crate::Error::Upstream)
+                .map(|res| res.into_inner().into())
+        };
+
+        Box::new(task)
     }
 
     type ServerFuture = future::Ready<Result<Self::ServerStream, Self::Error>>;

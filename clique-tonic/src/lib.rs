@@ -1,7 +1,7 @@
 use std::error;
 use std::fmt;
 
-use clique::transport::{Request, Response};
+use clique::transport::{proto, Request, Response};
 
 pub mod membership {
     tonic::include_proto!("clique");
@@ -28,7 +28,7 @@ impl From<Response> for membership::RapidResponse {
     }
 }
 
-impl From<Request> for membership::RapidRequest {
+impl From<proto::RequestKind> for membership::RapidRequest {
     fn from(_r: Request) -> Self {
         unimplemented!()
     }

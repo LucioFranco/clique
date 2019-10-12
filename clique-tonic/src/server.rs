@@ -22,6 +22,7 @@ impl Membership for GrpcServer {
         let (res_tx, res_rx) = oneshot::channel();
 
         self.req_tx
+            .clone()
             .send((req.into_inner().into(), res_tx))
             .await
             .map_err(|e| eprintln!("Unable to send request: {:?}", e));

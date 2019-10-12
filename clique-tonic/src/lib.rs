@@ -1,15 +1,14 @@
 use std::error;
 use std::fmt;
 
-use tonic;
-
 use clique::transport::{Request, Response};
 
 pub mod membership {
     tonic::include_proto!("clique");
 }
 
-pub mod server;
+mod server;
+pub mod transport;
 
 impl From<membership::RapidResponse> for Response {
     fn from(_r: membership::RapidResponse) -> Self {

@@ -12,6 +12,15 @@ pub mod membership {
 mod server;
 pub mod transport;
 
+/// Simple macro to extract an optional field from proto buf messgae.
+/// Keep in mind, the field needs to impl From<T> for U where T is the
+/// proto buf field type and U, the internal struct field type.
+macro_rules! extract_optional {
+    ($st:expr, $field:ident, $msg:tt) => {
+        $st.$field.take().expect($msg).into()
+    };
+}
+
 impl From<membership::RapidResponse> for Response {
     fn from(mut res: membership::RapidResponse) -> Self {
         use membership::rapid_response::Content;
@@ -26,12 +35,6 @@ impl From<membership::RapidResponse> for Response {
                 Response::new_probe(status)
             }
         }
-    }
-}
-
-impl From<membership::RapidRequest> for Request {
-    fn from(_r: membership::RapidRequest) -> Self {
-        unimplemented!();
     }
 }
 
@@ -83,6 +86,73 @@ impl From<membership::NodeId> for clique::NodeId {
         Uuid::parse_str(&r.uuid)
             .expect("Unable to parse UUID")
             .into()
+    }
+}
+
+impl From<membership::RapidRequest> for Request {
+    fn from(_r: membership::RapidRequest) -> Self {
+        unimplemented!();
+    }
+}
+
+impl From<membership::PreJoinMessage> for proto::PreJoinMessage {
+    fn from(r: membership::PreJoinMessage) -> Self {
+        // we only care about these two fields for some reason
+        proto::PreJoinMessage {
+            sender: extract_optional!(r, sender, "Unable to get sender from PreJoinMessage"),
+            node_id: extract_optional!(r, node_id, "Unable to get node Id from PreJoinMessage"),
+        }
+    }
+}
+
+impl From<membership::JoinMessage> for proto::JoinMessage {
+    fn from(r: membership::JoinMessage) -> Self {
+        proto::JoinMessage {
+            sender: extract_optional!(r, sender, "Unable to get sender from JoinMessage"),
+            node_id: extract_optional!(r, node_id, "Unable to get node Id from PreJoinMessage"),
+            ring_number: r.ring_number,
+            config_id: r.configuraion_id,
+        }
+    }
+}
+
+impl From<membership::BatchedAlertMessage> for proto::BatchedAlertMessage {
+    fn from(r: membershipBatchedAlertMessage) -> Self {
+        proto::BatchedAlertMessage {
+            sender: extract_optional!(
+                r,
+                sender,
+                "Umable to extract sender from BatchedAlertMessage"
+            ),
+            alerts: r.messgaes.into_iter().map(|m| m.into()).collect(),
+        }
+    }
+}
+
+impl From<membership::AlertMessage> for proto::Alert {
+    fn from(r: membership::AlertMessage) -> Self {
+        proto::Alert {
+            src: extract_optional!(r, edge_src, "Unable to extract edge_src from AlertMessage"),
+            dst: extract_optional!(r, edge_dst, "Unable to extract edge_dst from AlertMessage"),
+            edge_status: extract_optional!(
+                r,
+                edge_status,
+                "Unable to extract edge_status from AlertMessage"
+            ),
+            config_id: r.configuraion_id,
+            ring_number: r.ring_number,
+            node_id: extract_optional!(r, node_id, "Unable to extract node Id from AlertMessage"),
+            metadata: extract_optional!(r, metadata, "Unable to extract metdata from AlertMessage"),
+        }
+    }
+}
+
+impl from<membership::EdgeStatus> for proto::EdgeStatus {
+    fn from(r: membership::EdgeStatus) -> Self {
+        match r {
+            membership::EdgeStatus::Up => proto::EdgeStatus::Up,
+            membership::EdgeStatus::Down => proto::EdgeStatus::Down,
+        }
     }
 }
 

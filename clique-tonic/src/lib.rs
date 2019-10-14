@@ -1,6 +1,7 @@
 use std::error;
 use std::fmt;
 
+use bytes::Bytes;
 use clique::transport::{proto, Request, Response};
 use uuid::Uuid;
 
@@ -12,12 +13,10 @@ mod server;
 pub mod transport;
 
 impl From<membership::RapidResponse> for Response {
-    fn from(res: membership::RapidResponse) -> Self {
+    fn from(mut res: membership::RapidResponse) -> Self {
         use membership::rapid_response::Content;
 
-        let membership::RapidResponse {
-            content: Some(content),
-        } = res;
+        let content = res.content.take().expect("Did not get a valid message");
 
         match content {
             Content::JoinResponse(res) => Response::new_join(res.into()),
@@ -37,14 +36,38 @@ impl From<membership::RapidRequest> for Request {
 }
 
 impl From<membership::JoinResponse> for proto::JoinResponse {
-    fn from(r: membership::JoinResponse) -> Self {
+    fn from(mut r: membership::JoinResponse) -> Self {
+        let status_code = match r.status_code {
+            0 => proto::JoinStatus::HostnameAlreadyInRing,
+            1 => proto::JoinStatus::NodeIdAlreadyInRing,
+            2 => proto::JoinStatus::SafeToJoin,
+            3 => proto::JoinStatus::ConfigChanged,
+            4 => proto::JoinStatus::MembershipRejected,
+            _ => panic!("This should never happen"),
+        };
         proto::JoinResponse {
             sender: r.sender.take().unwrap().into(),
-            status: r.status_code,
+            status: status_code,
             config_id: r.configuration_id,
             endpoints: r.endpoints.into_iter().map(|pt| pt.into()).collect(),
             identifiers: r.identifiers.into_iter().map(|id| id.into()).collect(),
-            cluster_metadata: r.cluster_metadata,
+            cluster_metadata: r
+                .cluster_metadata
+                .into_iter()
+                .map(|(key, val)| (key, val.into()))
+                .collect(),
+        }
+    }
+}
+
+impl From<membership::Metadata> for proto::Metadata {
+    fn from(r: membership::Metadata) -> Self {
+        proto::Metadata {
+            metadata: r
+                .metadata
+                .into_iter()
+                .map(|(key, val)| (key, Bytes::from(val)))
+                .collect(),
         }
     }
 }
@@ -57,7 +80,9 @@ impl From<membership::Endpoint> for clique::Endpoint {
 
 impl From<membership::NodeId> for clique::NodeId {
     fn from(r: membership::NodeId) -> Self {
-        Uuid::from_bytes(r.uuid.into_bytes()).into()
+        Uuid::parse_str(&r.uuid)
+            .expect("Unable to parse UUID")
+            .into()
     }
 }
 

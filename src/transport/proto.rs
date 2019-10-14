@@ -49,7 +49,7 @@ pub struct JoinMessage {
 #[derive(Debug, Clone, PartialEq)]
 pub struct JoinResponse {
     pub sender: Endpoint,
-    pub status: Status,
+    pub status: JoinStatus,
     pub config_id: ConfigId,
     pub endpoints: Vec<Endpoint>,
     pub identifiers: Vec<NodeId>,

@@ -83,8 +83,8 @@ impl Response {
         Self::new(kind)
     }
 
-    pub fn new_probe() -> Self {
-        let kind = proto::ResponseKind::Probe;
+    pub fn new_probe(status: proto::Status) -> Self {
+        let kind = proto::ResponseKind::Probe(status);
         Self::new(kind)
     }
 }

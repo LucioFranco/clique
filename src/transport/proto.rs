@@ -13,11 +13,13 @@ pub enum RequestKind {
     Consensus(Consensus),
 }
 
+pub type Status = i32;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum ResponseKind {
     Join(JoinResponse),
     Response,
-    Probe,
+    Probe(Status),
     Consensus,
 }
 
@@ -47,12 +49,15 @@ pub struct JoinMessage {
 #[derive(Debug, Clone, PartialEq)]
 pub struct JoinResponse {
     pub sender: Endpoint,
-    pub status: JoinStatus,
+    pub status: Status,
     pub config_id: ConfigId,
     pub endpoints: Vec<Endpoint>,
     pub identifiers: Vec<NodeId>,
     pub cluster_metadata: HashMap<String, Metadata>,
 }
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EmptyResponse;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum JoinStatus {

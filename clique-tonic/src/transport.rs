@@ -1,7 +1,7 @@
 use std::pin::Pin;
 
 use clique::transport;
-use futures::{future, Future, TryFutureExt, FutureExt};
+use futures::{future, Future, FutureExt, TryFutureExt};
 use tokio::sync::mpsc;
 use tonic::{transport::Channel, Request, Response};
 
@@ -19,7 +19,11 @@ where
     T: Into<String>,
 {
     type Error = crate::Error;
-    type ClientFuture = Pin<Box<dyn Future<Output = Result<clique::transport::Response, crate::Error>> + Send + 'static>>;
+    type ClientFuture = Pin<
+        Box<
+            dyn Future<Output = Result<clique::transport::Response, crate::Error>> + Send + 'static,
+        >,
+    >;
 
     fn send(&mut self, req: transport::Request) -> Self::ClientFuture {
         let (target, kind) = req.into_parts();
@@ -51,6 +55,8 @@ where
 
 impl TonicTransport {
     pub fn new() -> Self {
-        TonicTransport { server: GrpcServer::new() }
+        TonicTransport {
+            server: GrpcServer::new(),
+        }
     }
 }

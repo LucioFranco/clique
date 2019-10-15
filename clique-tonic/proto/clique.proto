@@ -131,8 +131,8 @@ message FastRoundPhase2bMessage
 // ******* Classic Paxos messages *********
 message Rank
 {
-    int32 round = 1;
-    int32 nodeIndex = 2;
+    uint32 round = 1;
+    uint32 nodeIndex = 2;
 }
 
 message Phase1aMessage

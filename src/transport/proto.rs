@@ -120,6 +120,8 @@ impl Default for Metadata {
     }
 }
 
+// An index can never be negative, and rounds always monotonically
+// increase from 0
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct Rank {
     pub round: u32,

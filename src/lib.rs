@@ -21,6 +21,7 @@ pub mod transport;
 
 pub use self::builder::Builder;
 pub use self::cluster::Cluster;
+pub use self::common::{Endpoint, NodeId};
 pub use self::error::{Error, Result};
 pub use self::event::Event;
 pub use self::handle::Handle;

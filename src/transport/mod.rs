@@ -8,6 +8,8 @@ use futures::Stream;
 use std::future::Future;
 use tokio_sync::oneshot;
 
+pub type StreamItem = (Request, oneshot::Sender<crate::Result<Response>>);
+
 pub trait Transport<T> {
     type Error: std::error::Error + Send + 'static;
 
@@ -15,9 +17,7 @@ pub trait Transport<T> {
 
     fn send(&mut self, req: Request) -> Self::ClientFuture;
 
-    type ServerStream: Stream<Item = (Request, oneshot::Sender<crate::Result<Response>>)>
-        + Send
-        + Unpin;
+    type ServerStream: Stream<Item = StreamItem> + Send + Unpin;
     type ServerFuture: Future<Output = Result<Self::ServerStream, Self::Error>>;
 
     fn listen_on(&mut self, bind: T) -> Self::ServerFuture;
@@ -83,8 +83,8 @@ impl Response {
         Self::new(kind)
     }
 
-    pub fn new_probe() -> Self {
-        let kind = proto::ResponseKind::Probe;
+    pub fn new_probe(status: proto::Status) -> Self {
+        let kind = proto::ResponseKind::Probe(status);
         Self::new(kind)
     }
 }

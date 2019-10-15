@@ -168,7 +168,7 @@ impl<M: Monitor> Membership<M> {
 
     // Invoked by observers of a node for failure detection
     fn handle_probe_message(&self) -> Response {
-        Response::new_probe()
+        Response::new_probe(1) // TODO: FIXME THIS IS WRONG
     }
 
     // Receives edge update events and delivers them to the cut detector to check if it will

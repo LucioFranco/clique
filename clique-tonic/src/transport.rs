@@ -1,32 +1,62 @@
-use clique::trasnport;
-use tokio_sync::{mpsc, oneshot};
-use tonic::{
-    trasnport::client::{Channel, ResponseFuture},
-    Request, Response,
+use std::pin::Pin;
+
+use clique::transport;
+use futures::{future, Future};
+use tokio::sync::mpsc;
+use tonic::{transport::Channel, Request};
+
+use crate::{
+    membership::client::MembershipClient,
+    server::{GrpcServer, TransportItem},
 };
 
-use crate::server::{GrpcServer, TransportItem};
-
 pub struct TonicTransport {
-    client: Channel,
     server: GrpcServer,
 }
 
-impl trasnport::Trasnport<String> for TonicTransport {
+impl<T> transport::Transport<T> for TonicTransport
+where
+    T: Into<String>,
+{
     type Error = crate::Error;
-    type ClientFuture = ResponseFuture;
+    type ClientFuture = Pin<
+        Box<
+            dyn Future<Output = Result<clique::transport::Response, crate::Error>> + Send + 'static,
+        >,
+    >;
 
     fn send(&mut self, req: transport::Request) -> Self::ClientFuture {
-        let req = Request::new(req.into_inner().into());
-        self.client.call(req)
+        let (target, kind) = req.into_parts();
+
+        let channel = Channel::from_shared(target.as_bytes()).unwrap().channel();
+        let mut client = MembershipClient::new(channel);
+
+        let req = Request::new(kind.into());
+
+        let task = async move {
+            client
+                .send_request(req)
+                .await
+                .map_err(|_| crate::Error::Upstream)
+                .map(|res| res.into_inner().into())
+        };
+
+        Box::pin(task)
     }
 
-    type ServerFuture = Ready<Result<Self::ServerStream, Self::Error>>;
+    type ServerFuture = future::Ready<Result<Self::ServerStream, Self::Error>>;
     type ServerStream = mpsc::Receiver<TransportItem>;
 
-    fn listen_on(&mut self, bind: String) -> Self::ServerFuture {
-        let stream = self.server.create(bind);
-
+    fn listen_on(&mut self, bind: T) -> Self::ServerFuture {
+        let stream = self.server.create(bind.into());
         future::ready(Ok(stream))
+    }
+}
+
+impl TonicTransport {
+    pub fn new() -> Self {
+        TonicTransport {
+            server: GrpcServer::new(),
+        }
     }
 }

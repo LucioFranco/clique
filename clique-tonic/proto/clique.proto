@@ -22,6 +22,7 @@ message Endpoint
 message RapidRequest
 {
    oneof content {
+       // Mre join message
         PreJoinMessage preJoinMessage = 1;
         JoinMessage joinMessage = 2;
         BatchedAlertMessage batchedAlertMessage = 3;
@@ -49,8 +50,7 @@ message RapidResponse
 
 message NodeId
 {
-   int64 high = 1;
-   int64 low = 2;
+   string uuid = 1;
 }
 
 // TODO: JoinMessage and JoinResponse are overloaded because they are being used for phase 1 and 2 of the bootstrap.
@@ -131,8 +131,8 @@ message FastRoundPhase2bMessage
 // ******* Classic Paxos messages *********
 message Rank
 {
-    int32 round = 1;
-    int32 nodeIndex = 2;
+    uint32 round = 1;
+    uint32 nodeIndex = 2;
 }
 
 message Phase1aMessage

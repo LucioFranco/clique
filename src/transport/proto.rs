@@ -13,11 +13,13 @@ pub enum RequestKind {
     Consensus(Consensus),
 }
 
+pub type Status = i32;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum ResponseKind {
     Join(JoinResponse),
     Response,
-    Probe,
+    Probe(Status),
     Consensus,
 }
 
@@ -53,6 +55,9 @@ pub struct JoinResponse {
     pub identifiers: Vec<NodeId>,
     pub cluster_metadata: HashMap<String, Metadata>,
 }
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EmptyResponse;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum JoinStatus {
@@ -115,6 +120,8 @@ impl Default for Metadata {
     }
 }
 
+// An index can never be negative, and rounds always monotonically
+// increase from 0
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct Rank {
     pub round: u32,

@@ -1,8 +1,8 @@
-use clique::transport::{Request, Response, Transport};
-use futures::stream::FuturesUnordered;
+use clique::transport::{Request, Response};
 
 use std::{cmp::Ordering, collections::BinaryHeap, time::Instant};
 
+#[allow(dead_code)]
 struct SimulatedTransport {
     priority: BinaryHeap<Event>,
 }
@@ -10,13 +10,14 @@ struct SimulatedTransport {
 impl SimulatedTransport {}
 
 struct Event {
+    #[allow(dead_code)]
     message: Message,
     time: Instant,
 }
 
 impl Ord for Event {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.time.cmp(other.time)
+        self.time.cmp(&other.time)
     }
 }
 
@@ -32,13 +33,12 @@ impl PartialEq for Event {
     }
 }
 
-struct Simulator {
-    transport: SimulatedTransport,
-    runner: FuturesUnordered,
-}
+impl Eq for Event {}
 
 enum Message {
+    #[allow(dead_code)]
     Req(Request),
+    #[allow(dead_code)]
     Res(Response),
 }
 

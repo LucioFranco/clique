@@ -1,17 +1,12 @@
-use std::net::ToSocketAddrs;
-
-use futures::future::{FutureExt, TryFutureExt};
+use futures::future::FutureExt;
 use tokio::sync::{mpsc, oneshot};
 use tonic::{transport::Server, Request, Response, Status};
 
 use clique::transport;
 
-use crate::{
-    membership::{
-        server::{Membership, MembershipServer},
-        RapidRequest, RapidResponse,
-    },
-    Error,
+use crate::membership::{
+    server::{Membership, MembershipServer},
+    RapidRequest, RapidResponse,
 };
 
 pub(crate) type TransportItem = (

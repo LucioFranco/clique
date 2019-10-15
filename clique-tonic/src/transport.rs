@@ -1,12 +1,12 @@
 use std::pin::Pin;
 
 use clique::transport;
-use futures::{future, Future, FutureExt, TryFutureExt};
+use futures::{future, Future};
 use tokio::sync::mpsc;
-use tonic::{transport::Channel, Request, Response};
+use tonic::{transport::Channel, Request};
 
 use crate::{
-    membership::{client::MembershipClient, RapidRequest},
+    membership::client::MembershipClient,
     server::{GrpcServer, TransportItem},
 };
 

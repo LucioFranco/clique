@@ -219,6 +219,8 @@ where
         let req = proto::RequestKind::PreJoin(proto::PreJoinMessage {
             sender: self.endpoint.clone(),
             node_id: self.node_id.clone(),
+            ring_number: vec![],
+            config_id: None
         });
 
         let join_res = match self
@@ -292,6 +294,8 @@ where
                 node_id: self.node_id.clone(),
                 ring_number: ring_nums,
                 config_id: join_res.config_id,
+                // TODO: add metadata to the cluster
+                metadata: None
             });
 
             let fut = self.transport.send(Request::new(endpoint.clone(), join));

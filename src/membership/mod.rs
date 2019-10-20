@@ -97,7 +97,7 @@ impl<M: Monitor> Membership<M> {
     }
 
     pub async fn handle_pre_join(&mut self, msg: PreJoinMessage) -> Result<Response> {
-        let PreJoinMessage { sender, node_id } = msg;
+        let PreJoinMessage { sender, node_id, .. } = msg;
 
         let status = self.view.is_safe_to_join(&sender, &node_id);
         let config_id = self.view.get_config().config_id();

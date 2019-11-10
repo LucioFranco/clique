@@ -36,6 +36,8 @@ pub enum Consensus {
 pub struct PreJoinMessage {
     pub sender: Endpoint,
     pub node_id: NodeId,
+    pub ring_number: Vec<RingNumber>,
+    pub config_id: Option<ConfigId>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -44,6 +46,7 @@ pub struct JoinMessage {
     pub node_id: NodeId,
     pub ring_number: Vec<RingNumber>,
     pub config_id: ConfigId,
+    pub metadata: Option<Metadata>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -25,6 +25,7 @@ pub(crate) enum ErrorKind {
     AlreadyReachedconsensus,
     FastRoundFailure,
 
+    JoinPhase1,
     JoinPhase2,
 
     UnableToReachDecision,
@@ -34,6 +35,10 @@ impl Error {
     #[allow(unused)]
     pub(crate) fn kind(&self) -> &ErrorKind {
         &self.kind
+    }
+
+    pub(crate) fn new_join_phase1() -> Self {
+        Self::new(ErrorKind::JoinPhase1, None)
     }
 
     pub(crate) fn new(kind: ErrorKind, source: Option<Source>) -> Self {

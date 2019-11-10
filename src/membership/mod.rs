@@ -1,6 +1,6 @@
-mod cut_detector;
+pub mod cut_detector;
 mod ring;
-mod view;
+pub mod view;
 
 use crate::{
     common::{ConfigId, Endpoint, NodeId, Scheduler, SchedulerEvents},
@@ -45,8 +45,36 @@ pub struct Membership<M> {
 
 impl<M: Monitor> Membership<M> {
     #[allow(dead_code)]
-    pub fn new() -> Self {
-        unimplemented!()
+    pub fn new(
+        host_addr: Endpoint,
+        view: View,
+        cut_detector: CutDetector,
+        monitor: M,
+        current_config_id: ConfigId,
+    ) -> Self {
+        // TODO: setup startup tasks
+
+        let paxos = FastPaxos::new(
+            host_addr,
+            view.get_membership_size(),
+            self.client,
+            self.current_config_id,
+        );
+
+        Self {
+            host_addr,
+            view,
+            cut_detector,
+            monitor,
+            current_config_id,
+            paxos,
+            alerts: VecDeque::default(),
+            last_enqueued_alert: Instant::now(),
+            joiners_to_respond: HashMap::default(),
+            batch_window: Duration::new(10, 0),
+            announced_proposal: false,
+            joiner_data: HashMap::default(),
+        }
     }
 
     pub fn view(&self) -> Vec<&Endpoint> {
@@ -97,7 +125,9 @@ impl<M: Monitor> Membership<M> {
     }
 
     pub async fn handle_pre_join(&mut self, msg: PreJoinMessage) -> Result<Response> {
-        let PreJoinMessage { sender, node_id } = msg;
+        let PreJoinMessage {
+            sender, node_id, ..
+        } = msg;
 
         let status = self.view.is_safe_to_join(&sender, &node_id);
         let config_id = self.view.get_config().config_id();

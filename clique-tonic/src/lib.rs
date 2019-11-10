@@ -103,6 +103,8 @@ impl From<membership::PreJoinMessage> for proto::PreJoinMessage {
         proto::PreJoinMessage {
             sender: extract_optional!(r, sender, "Unable to get sender from PreJoinMessage"),
             node_id: extract_optional!(r, node_id, "Unable to get node Id from PreJoinMessage"),
+            ring_number: r.ring_number,
+            config_id: Some(r.configuration_id),
         }
     }
 }
@@ -114,6 +116,7 @@ impl From<membership::JoinMessage> for proto::JoinMessage {
             node_id: extract_optional!(r, node_id, "Unable to get node Id from PreJoinMessage"),
             ring_number: r.ring_number,
             config_id: r.configuration_id,
+            metadata: r.metadata.map(|m| m.into()),
         }
     }
 }
@@ -264,8 +267,8 @@ impl From<Response> for membership::RapidResponse {
             ResponseKind::Join(m) => Content::JoinResponse(m.into()),
             ResponseKind::Response => Content::Response(membership::EmptyResponse {}),
             ResponseKind::Consensus => Content::ConsensusResponse(membership::ConsensusResponse {}),
-            ResponseKind::Probe(m) => {
-                Content::ProbeResponse(membership::ProbeResponse { status: m.status })
+            ResponseKind::Probe(status) => {
+                Content::ProbeResponse(membership::ProbeResponse { status })
             }
         };
 
@@ -276,8 +279,8 @@ impl From<Response> for membership::RapidResponse {
 }
 
 impl From<proto::JoinResponse> for membership::JoinResponse {
-    fn from(mut j: proto::JoinResponse) -> Self {
-        let status_code = match j.status_code {
+    fn from(j: proto::JoinResponse) -> Self {
+        let status_code = match j.status {
             proto::JoinStatus::HostnameAlreadyInRing => 0,
             proto::JoinStatus::NodeIdAlreadyInRing => 1,
             proto::JoinStatus::SafeToJoin => 2,
@@ -290,7 +293,7 @@ impl From<proto::JoinResponse> for membership::JoinResponse {
             status_code,
             configuration_id: j.config_id,
             endpoints: j.endpoints.into_iter().map(|val| val.into()).collect(),
-            identifier: j.identifiers.into_iter().map(|id| id.into()).collect(),
+            identifiers: j.identifiers.into_iter().map(|id| id.into()).collect(),
             cluster_metadata: j
                 .cluster_metadata
                 .into_iter()
@@ -300,14 +303,15 @@ impl From<proto::JoinResponse> for membership::JoinResponse {
     }
 }
 
-impl From<Request> for membership::RapidRequest {
-    fn from(mut r: Request) -> Self {
+impl From<proto::RequestKind> for membership::RapidRequest {
+    fn from(r: proto::RequestKind) -> Self {
         use membership::rapid_request::Content;
         use proto::{Consensus, RequestKind};
 
-        let content = match r.into_inner() {
+        let content = match r {
             RequestKind::PreJoin(m) => Content::PreJoinMessage(m.into()),
             RequestKind::Join(m) => Content::JoinMessage(m.into()),
+            RequestKind::BatchedAlert(m) => Content::BatchedAlertMessage(m.into()),
             RequestKind::Probe => Content::ProbeMessage(membership::ProbeMessage {
                 sender: None,
                 payload: vec![],
@@ -336,10 +340,12 @@ impl From<Request> for membership::RapidRequest {
 }
 
 impl From<proto::PreJoinMessage> for membership::PreJoinMessage {
-    fn from(p: proto::PreJoinMessage) -> Self {
+    fn from(mut p: proto::PreJoinMessage) -> Self {
         membership::PreJoinMessage {
-            sender: Some(p.sender().into()),
+            sender: Some(p.sender.into()),
             node_id: Some(p.node_id.into()),
+            ring_number: p.ring_number,
+            configuration_id: p.config_id.take().unwrap(),
         }
     }
 }
@@ -351,6 +357,7 @@ impl From<proto::JoinMessage> for membership::JoinMessage {
             node_id: Some(j.node_id.into()),
             ring_number: j.ring_number,
             configuration_id: j.config_id,
+            metadata: j.metadata.map(|m| m.into()),
         }
     }
 }
@@ -378,6 +385,7 @@ impl From<proto::Alert> for membership::AlertMessage {
             ring_number: a.ring_number,
             node_id: a.node_id.map(|n| n.into()),
             metadata: a.metadata.map(|m| m.into()),
+            configuration_id: a.config_id,
         }
     }
 }
@@ -392,7 +400,7 @@ impl From<proto::EdgeStatus> for membership::EdgeStatus {
 }
 
 impl From<proto::FastRoundPhase2bMessage> for membership::FastRoundPhase2bMessage {
-    fn from(mut p: proto::FastRoundPhase2bMessage) -> Self {
+    fn from(p: proto::FastRoundPhase2bMessage) -> Self {
         membership::FastRoundPhase2bMessage {
             sender: Some(p.sender.into()),
             configuration_id: p.config_id,
@@ -401,7 +409,7 @@ impl From<proto::FastRoundPhase2bMessage> for membership::FastRoundPhase2bMessag
     }
 }
 impl From<proto::Phase1aMessage> for membership::Phase1aMessage {
-    fn from(mut p: proto::Phase1aMessage) -> Self {
+    fn from(p: proto::Phase1aMessage) -> Self {
         membership::Phase1aMessage {
             sender: Some(p.sender.into()),
             configuration_id: p.config_id,
@@ -411,7 +419,7 @@ impl From<proto::Phase1aMessage> for membership::Phase1aMessage {
 }
 
 impl From<proto::Phase1bMessage> for membership::Phase1bMessage {
-    fn from(mut p: proto::Phase1bMessage) -> Self {
+    fn from(p: proto::Phase1bMessage) -> Self {
         membership::Phase1bMessage {
             sender: Some(p.sender.into()),
             configuration_id: p.config_id,
@@ -423,7 +431,7 @@ impl From<proto::Phase1bMessage> for membership::Phase1bMessage {
 }
 
 impl From<proto::Phase2aMessage> for membership::Phase2aMessage {
-    fn from(mut p: proto::Phase2aMessage) -> Self {
+    fn from(p: proto::Phase2aMessage) -> Self {
         membership::Phase2aMessage {
             sender: Some(p.sender.into()),
             configuration_id: p.config_id,
@@ -434,7 +442,7 @@ impl From<proto::Phase2aMessage> for membership::Phase2aMessage {
 }
 
 impl From<proto::Phase2bMessage> for membership::Phase2bMessage {
-    fn from(mut p: proto::Phase2bMessage) -> Self {
+    fn from(p: proto::Phase2bMessage) -> Self {
         membership::Phase2bMessage {
             sender: Some(p.sender.into()),
             configuration_id: p.config_id,
@@ -445,7 +453,7 @@ impl From<proto::Phase2bMessage> for membership::Phase2bMessage {
 }
 
 impl From<proto::Rank> for membership::Rank {
-    fn from(mut r: proto::Rank) -> Self {
+    fn from(r: proto::Rank) -> Self {
         membership::Rank {
             round: r.round,
             node_index: r.node_index,
@@ -454,7 +462,7 @@ impl From<proto::Rank> for membership::Rank {
 }
 
 impl From<proto::Metadata> for membership::Metadata {
-    fn from(mut m: proto::Metadata) -> Self {
+    fn from(m: proto::Metadata) -> Self {
         membership::Metadata {
             metadata: m
                 .metadata
@@ -466,7 +474,7 @@ impl From<proto::Metadata> for membership::Metadata {
 }
 
 impl From<clique::Endpoint> for membership::Endpoint {
-    fn from(mut e: clique::Endpoint) -> Self {
+    fn from(e: clique::Endpoint) -> Self {
         let addr: std::net::SocketAddr = e.parse().expect("Unable to parse endpoint");
 
         membership::Endpoint {
@@ -477,7 +485,7 @@ impl From<clique::Endpoint> for membership::Endpoint {
 }
 
 impl From<clique::NodeId> for membership::NodeId {
-    fn from(mut n: clique::NodeId) -> Self {
+    fn from(n: clique::NodeId) -> Self {
         membership::NodeId {
             uuid: format!("{:?}", n),
         }

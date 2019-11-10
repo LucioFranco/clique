@@ -4,7 +4,7 @@ use crate::{
     error::{Error, Result},
     event::Event,
     handle::Handle,
-    membership::Membership,
+    membership::{cut_detector::CutDetector, view::View, Membership},
     monitor::ping_pong,
     transport::{client, proto, Client, Request, Response, Transport},
 };
@@ -16,6 +16,10 @@ use futures::{
 use std::{collections::HashMap, time::Duration};
 use tokio_sync::{oneshot, watch};
 use tokio_timer::Interval;
+
+const K: usize = 10;
+const H: usize = 9;
+const L: usize = 4;
 
 pub struct Cluster<T, Target>
 where
@@ -54,20 +58,13 @@ pub(crate) struct Inner<T, Target>
 where
     T: Transport<Target>,
 {
-    membership: Membership<ping_pong::PingPong>,
+    membership: Option<Membership<ping_pong::PingPong>>,
     transport: T,
-    #[allow(dead_code)]
     listen_target: Target,
-    #[allow(dead_code)]
     event_tx: watch::Sender<Event>,
-
     endpoint: Endpoint,
     node_id: NodeId,
-
-    // TODO: might make sense to move this to the fn run since that seems to be the
-    // only place we actually use it.
     scheduler: Scheduler,
-
     client: Client,
     client_stream: Fuse<client::RequestStream>,
     server_stream: Fuse<T::ServerStream>,
@@ -95,7 +92,8 @@ where
         let node_id = NodeId::new();
 
         Self {
-            membership: Membership::new(),
+            // membership is instantiated either by a join attempt or on start
+            membership: None,
             transport,
             listen_target,
             event_tx,
@@ -109,16 +107,33 @@ where
     }
 
     pub async fn start(&mut self) -> Result<()> {
+        let node_id = NodeId::new();
+        let listen_addr = self.listen_target.clone().into();
+
+        let view = View::bootstrap(K as i32, vec![node_id], vec![listen_addr]);
+        let cut_detector = CutDetector::new(K, H, L);
+        let monitor = monitor::PingPong::new(Duration::new(10), Duration::new(10));
+
+        let membership = membership::Membership::new(
+            listen_addr,
+            view,
+            cut_detector,
+            monitor,
+            self.current_config_id,
+            paxos,
+        );
+
+        self.membership = Some(membership);
+
         self.run().await
     }
 
     pub async fn join(&mut self, seed_addr: Target) -> Result<()> {
         for _ in 0..10 {
-            match self.join_attempt(seed_addr.into()).await {
-                _ => panic!(),
-            }
+            return self.join_attempt(seed_addr.into()).await?;
         }
-        Ok(())
+
+        Err(Error::new_join_phase2())
     }
 
     async fn run(&mut self) -> Result<()> {
@@ -132,7 +147,7 @@ where
         loop {
             futures::select! {
                 request = self.server_stream.select_next_some() => {
-                    self.handle_server(request).await?;
+                    self.handle_server(request).await;
                 },
                 event = self.scheduler.select_next_some() => {
                     match event {
@@ -145,7 +160,7 @@ where
                             continue;
                         }
                         SchedulerEvents::None => continue,
-                        _ => unimplemented!()
+                        _ => panic!("An unknown event type found. This cannot happen.")
                     }
                 },
                 request = self.client_stream.select_next_some() => {
@@ -153,7 +168,9 @@ where
                     self.scheduler.push(task);
                 },
                 (subject, config_id) = edge_failure_notifications_rx.select_next_some() => {
-                    self.membership.edge_failure_notification(subject, config_id);
+                    if let Some(m) = self.membership {
+                        m.edge_failure_notification(subject, config_id);
+                    }
                 },
                 _ = alert_batcher_interval.select_next_some() => {
                     if let Some(msg) = self.membership.get_batch_alerts() {
@@ -168,13 +185,13 @@ where
     async fn handle_server(
         &mut self,
         request: (Request, oneshot::Sender<crate::Result<Response>>),
-    ) -> Result<()> {
+    ) {
         let (request, response_tx) = request;
-        self.membership
-            .handle_message(request, response_tx, &mut self.scheduler)
-            .await;
-
-        Ok(())
+        if let Some(m) = self.membership {
+            self.membership
+                .handle_message(request, response_tx, &mut self.scheduler)
+                .await;
+        }
     }
 
     // Need this to be a boxed futures since we want to send these tasks into
@@ -220,7 +237,7 @@ where
             sender: self.endpoint.clone(),
             node_id: self.node_id.clone(),
             ring_number: vec![],
-            config_id: None
+            config_id: None,
         });
 
         let join_res = match self
@@ -231,13 +248,13 @@ where
             .into_inner()
         {
             proto::ResponseKind::Join(res) => res,
-            _ => unimplemented!("wrong request type"),
+            _ => Error::new_join_phase1(),
         };
 
         if join_res.status != proto::JoinStatus::SafeToJoin
             && join_res.status != proto::JoinStatus::HostnameAlreadyInRing
         {
-            unimplemented!("JoinPhaseOneException");
+            return Error::new_join_phase1();
         }
 
         let config_to_join = if join_res.status == proto::JoinStatus::HostnameAlreadyInRing {
@@ -295,7 +312,7 @@ where
                 ring_number: ring_nums,
                 config_id: join_res.config_id,
                 // TODO: add metadata to the cluster
-                metadata: None
+                metadata: None,
             });
 
             let fut = self.transport.send(Request::new(endpoint.clone(), join));
@@ -314,7 +331,31 @@ where
         Ok(responses)
     }
 
-    async fn cluster_from_join(&mut self, _join_res: proto::JoinResponse) -> Result<()> {
-        unimplemented!()
+    async fn cluster_from_join(&mut self, join_res: proto::JoinResponse) -> Result<()> {
+        // Safe to proceed. Extract the list of endpoints and identifiers from the message,
+        // assemble to MemberShipService object and start and RPCServer
+        let endpoints = join_res.endpoints;
+        let node_ids = join_res.identifiers;
+        let metadata = join_res.cluster_metadata;
+
+        debug_assert!(endpoints.len() > 0);
+        debug_assert!(node_ids.len() > 0);
+
+        let view = View::bootstrap(K as i32, node_ids, endpoints);
+        let cut_detector = CutDetector::new(K, H, L);
+        let monitor = monitor::PingPong::new(Duration::new(10), Duration::new(10));
+
+        let membership = membership::Membership::new(
+            self.listen_target.clone().into(),
+            view,
+            cut_detector,
+            monitor,
+            self.current_config_id,
+            paxos,
+        );
+
+        self.membership = Some(membership);
+
+        Ok(())
     }
 }

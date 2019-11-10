@@ -14,6 +14,15 @@ pub struct PingPong {
     tick_delay: Duration,
 }
 
+impl PingPong for PingPong {
+    pub fn new(timeout: Duration, tick_delay: Duration) -> Self {
+        PingPong {
+            timeout,
+            tick_delay,
+        }
+    }
+}
+
 impl Monitor for PingPong {
     type Future = future::BoxFuture<'static, ()>;
 
@@ -50,6 +59,6 @@ impl Monitor for PingPong {
                 delay(Instant::now() + tick_delay).await;
             }
         }
-            .boxed()
+        .boxed()
     }
 }

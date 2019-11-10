@@ -303,7 +303,6 @@ impl From<proto::JoinResponse> for membership::JoinResponse {
     }
 }
 
-
 impl From<proto::RequestKind> for membership::RapidRequest {
     fn from(r: proto::RequestKind) -> Self {
         use membership::rapid_request::Content;
@@ -346,7 +345,7 @@ impl From<proto::PreJoinMessage> for membership::PreJoinMessage {
             sender: Some(p.sender.into()),
             node_id: Some(p.node_id.into()),
             ring_number: p.ring_number,
-            configuration_id: p.config_id.take().unwrap()
+            configuration_id: p.config_id.take().unwrap(),
         }
     }
 }
@@ -358,7 +357,7 @@ impl From<proto::JoinMessage> for membership::JoinMessage {
             node_id: Some(j.node_id.into()),
             ring_number: j.ring_number,
             configuration_id: j.config_id,
-            metadata: j.metadata.map(|m| m.into())
+            metadata: j.metadata.map(|m| m.into()),
         }
     }
 }
@@ -386,7 +385,7 @@ impl From<proto::Alert> for membership::AlertMessage {
             ring_number: a.ring_number,
             node_id: a.node_id.map(|n| n.into()),
             metadata: a.metadata.map(|m| m.into()),
-            configuration_id: a.config_id
+            configuration_id: a.config_id,
         }
     }
 }

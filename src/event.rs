@@ -5,6 +5,7 @@ pub enum Event {
     Members(Vec<Endpoint>),
     Join(Endpoint),
     Leave(Endpoint),
+    ViewChange,
     Start,
 }
 

@@ -6,6 +6,7 @@ use crate::{
     common::{ConfigId, Endpoint, NodeId, Scheduler, SchedulerEvents},
     consensus::FastPaxos,
     error::Result,
+    event::Event,
     monitor::Monitor,
     transport::{
         proto::{
@@ -21,7 +22,7 @@ use std::{
     collections::{HashMap, VecDeque},
     time::{Duration, Instant},
 };
-use tokio_sync::{mpsc, oneshot};
+use tokio_sync::{mpsc, oneshot, watch};
 use tracing::info;
 use view::View;
 
@@ -41,6 +42,7 @@ pub struct Membership<M> {
     paxos: FastPaxos,
     announced_proposal: bool,
     joiner_data: HashMap<Endpoint, (NodeId, Metadata)>,
+    event_tx: watch::Sender<Event>,
 }
 
 impl<M: Monitor> Membership<M> {
@@ -51,6 +53,7 @@ impl<M: Monitor> Membership<M> {
         cut_detector: CutDetector,
         monitor: M,
         current_config_id: ConfigId,
+        event_tx: watch::Sender<Event>,
     ) -> Self {
         // TODO: setup startup tasks
 
@@ -74,6 +77,7 @@ impl<M: Monitor> Membership<M> {
             batch_window: Duration::new(10, 0),
             announced_proposal: false,
             joiner_data: HashMap::default(),
+            event_tx,
         }
     }
 
@@ -159,9 +163,9 @@ impl<M: Monitor> Membership<M> {
         Ok(Response::new_join(join_res))
     }
 
-    #[allow(unreachable_code, unused_variables)]
     pub async fn handle_join(&mut self, msg: JoinMessage, response_tx: OutboundResponse) {
-        let current_config_id = self.view.get_config().config_id();
+        let config = self.view.get_config();
+        let current_config_id = config.config_id();
 
         if msg.config_id == current_config_id {
             self.joiners_to_respond
@@ -186,13 +190,30 @@ impl<M: Monitor> Membership<M> {
             let response = if self.view.is_host_present(&msg.sender)
                 && self.view.is_node_id_present(&msg.node_id)
             {
-                // TODO: joining host is already present so return:
-                // `SafeToJoin`, current endpoints, and ids.
-                unimplemented!()
+                // Race condition where a observer already crossed H messages for the joiner and
+                // changed the configuration, but the JoinPhase2 message shows up at the observer
+                // after it has already added the joiner. In this case, simply tell the joiner it's
+                // safe to join
+                proto::JoinResponse {
+                    sender: self.host_addr,
+                    status: JoinStatusCode::SafeToJoin,
+                    config_id: config.config_id(),
+                    endpoints: config.endpoints.clone(),
+                    identifiers: config.node_ids.clone(),
+                    cluster_metadata: HashMap::new(),
+                }
             } else {
-                // TODO: Wrong config, return `CONFIG_CHANGE`
-                unimplemented!()
+                proto::JoinResponse {
+                    sender: self.host_addr,
+                    status: JoinStatusCode::ConfigChanged,
+                    config_id: config.config_id(),
+                    endpoints: vec![],
+                    identifiers: vec![],
+                    cluster_metadata: HashMap::new(),
+                }
             };
+
+            response_tx.send(response);
         }
     }
 
@@ -255,14 +276,15 @@ impl<M: Monitor> Membership<M> {
             return false;
         }
 
-        // An invariant to maintain is that a node can only go into the membership set once and leave
-        // it once
+        // An invariant to maintain is that a node can only go into the membership set once
+        // and leave it once
         if message.edge_status == EdgeStatus::Down && !self.view.is_host_present(&dst) {
             return false;
         }
 
         if message.edge_status == EdgeStatus::Up {
-            // Add joiner data after the node is done being added to the set. Store in a temp location for now.
+            // Add joiner data after the node is done being added to the set. Store in a
+            // temp location for now.
             self.joiner_data.insert(
                 dst.clone(),
                 (
@@ -295,9 +317,22 @@ impl<M: Monitor> Membership<M> {
         Ok(rx)
     }
 
-    pub fn edge_failure_notification(&mut self, _subject: Endpoint, _config_id: ConfigId) {
-        // TODO: enqueue a new batch alert with this subject in the EdgeStatus::Down state≤
-        unimplemented!()
+    pub fn edge_failure_notification(&mut self, subject: Endpoint, config_id: ConfigId) {
+        if config_id != self.config_id {
+            return;
+        }
+
+        let alert = proto::Alert {
+            src: self.host_addr.clone(),
+            dst: subject,
+            edge_status: proto::EdgeStatus::Up,
+            config_id,
+            node_id: Some(msg.node_id.clone()),
+            ring_number: msg.ring_number,
+            metadata: None,
+        };
+
+        self.enqueue_alert(alert);
     }
 
     pub fn get_batch_alerts(&mut self) -> Option<proto::BatchedAlertMessage> {

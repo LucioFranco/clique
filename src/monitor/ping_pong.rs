@@ -8,6 +8,9 @@ use std::time::{Duration, Instant};
 use tokio_sync::mpsc;
 use tokio_timer::{delay, Timeout};
 
+// Number of bootstrapping responses allowed by a node before being treated as a failure condition.
+const BOOTSTRAP_COUNT_THRESHOLD: usize = 30;
+
 #[derive(Debug)]
 pub struct PingPong {
     timeout: Duration,
@@ -32,20 +35,36 @@ impl Monitor for PingPong {
         mut client: Client,
         current_config_id: ConfigId,
         mut notification_tx: mpsc::Sender<(Endpoint, ConfigId)>,
+        cancellation_rx: oneshot::Receiver<()>,
     ) -> Self::Future {
         let timeout = self.timeout;
         let tick_delay = self.tick_delay;
 
         async move {
             let mut failures: usize = 0;
+            let mut bootstraps: usize = 0;
 
             loop {
+                match cancellation_rx.try_recv() {
+                    Ok(_) => continue,
+                    Err(_) => return,
+                };
+
                 let fut = client.send(subject.clone(), proto::RequestKind::Probe);
+                let result = Timeout::new(fut, timeout).await;
 
-                if let Err(_) = Timeout::new(fut, timeout).await {
+                if result.is_err() {
                     failures += 1;
+                }
 
-                    // TODO: check if the node is bootstraping
+                if let Ok(response) = result {
+                    if response.status == proto::NodeStatus::Bootstrapping {
+                        bootstraps += 1;
+
+                        if bootstraps > BOOTSTRAP_COUNT_THRESHOLD {
+                            failures += 1;
+                        }
+                    }
                 }
 
                 if failures >= 5 {

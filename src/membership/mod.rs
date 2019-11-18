@@ -1,11 +1,10 @@
 pub mod cut_detector;
-mod ring;
-pub mod view;
 
 use crate::{
     common::{ConfigId, Endpoint, NodeId, Scheduler, SchedulerEvents},
     consensus::FastPaxos,
     error::Result,
+    event::{Event, NodeStatusChange},
     monitor::Monitor,
     transport::{
         proto::{
@@ -21,7 +20,7 @@ use std::{
     collections::{HashMap, VecDeque},
     time::{Duration, Instant},
 };
-use tokio_sync::{mpsc, oneshot};
+use tokio_sync::{mpsc, oneshot, watch};
 use tracing::info;
 use view::View;
 
@@ -41,6 +40,8 @@ pub struct Membership<M> {
     paxos: FastPaxos,
     announced_proposal: bool,
     joiner_data: HashMap<Endpoint, (NodeId, Metadata)>,
+    event_tx: watch::Sender<Event>,
+    monitor_cancellers: Vec<oneshot::Sender<()>>,
 }
 
 impl<M: Monitor> Membership<M> {
@@ -51,6 +52,7 @@ impl<M: Monitor> Membership<M> {
         cut_detector: CutDetector,
         monitor: M,
         current_config_id: ConfigId,
+        event_tx: watch::Sender<Event>,
     ) -> Self {
         // TODO: setup startup tasks
 
@@ -60,6 +62,8 @@ impl<M: Monitor> Membership<M> {
             self.client,
             self.current_config_id,
         );
+
+        event_tx.send(Event::ViewChange(self.get_inititial_view_changes()));
 
         Self {
             host_addr,
@@ -74,7 +78,22 @@ impl<M: Monitor> Membership<M> {
             batch_window: Duration::new(10, 0),
             announced_proposal: false,
             joiner_data: HashMap::default(),
+            monitor_cancellers: vec![],
+            event_tx,
         }
+    }
+
+    fn get_inititial_view_changes(&self) -> Vec<NodeStatusChange> {
+        let nodes = self.view.get_ring(0);
+
+        nodes
+            .iter()
+            .map(|i| NodeStatusChange {
+                endpoint: self.host_addr,
+                status: JoinStatus::Up,
+                metadata: HashMap::new(),
+            })
+            .collect()
     }
 
     pub fn view(&self) -> Vec<&Endpoint> {
@@ -159,9 +178,9 @@ impl<M: Monitor> Membership<M> {
         Ok(Response::new_join(join_res))
     }
 
-    #[allow(unreachable_code, unused_variables)]
     pub async fn handle_join(&mut self, msg: JoinMessage, response_tx: OutboundResponse) {
-        let current_config_id = self.view.get_config().config_id();
+        let config = self.view.get_config();
+        let current_config_id = config.config_id();
 
         if msg.config_id == current_config_id {
             self.joiners_to_respond
@@ -186,13 +205,30 @@ impl<M: Monitor> Membership<M> {
             let response = if self.view.is_host_present(&msg.sender)
                 && self.view.is_node_id_present(&msg.node_id)
             {
-                // TODO: joining host is already present so return:
-                // `SafeToJoin`, current endpoints, and ids.
-                unimplemented!()
+                // Race condition where a observer already crossed H messages for the joiner and
+                // changed the configuration, but the JoinPhase2 message shows up at the observer
+                // after it has already added the joiner. In this case, simply tell the joiner it's
+                // safe to join
+                proto::JoinResponse {
+                    sender: self.host_addr,
+                    status: JoinStatusCode::SafeToJoin,
+                    config_id: config.config_id(),
+                    endpoints: config.endpoints.clone(),
+                    identifiers: config.node_ids.clone(),
+                    cluster_metadata: HashMap::new(),
+                }
             } else {
-                // TODO: Wrong config, return `CONFIG_CHANGE`
-                unimplemented!()
+                proto::JoinResponse {
+                    sender: self.host_addr,
+                    status: JoinStatusCode::ConfigChanged,
+                    config_id: config.config_id(),
+                    endpoints: vec![],
+                    identifiers: vec![],
+                    cluster_metadata: HashMap::new(),
+                }
             };
+
+            response_tx.send(response);
         }
     }
 
@@ -231,12 +267,30 @@ impl<M: Monitor> Membership<M> {
 
         if !proposal.is_empty() {
             self.announced_proposal = true;
-            // TODO: notify subscription of view change proposal
+
+            self.event_tx.send(Event::ViewChangeProposal(
+                self.create_node_status_change_list(proposal),
+            ));
 
             self.paxos.propose(proposal, scheduler).await?
         }
 
         Ok(())
+    }
+
+    fn create_node_status_change_list(&self, proposal: Vec<Endpoint>) -> Vec<NodeStatusChange> {
+        proposal
+            .iter()
+            .map(|node| NodeStatusChange {
+                endpoint: node,
+                status: if self.view.is_host_present(node) {
+                    EdgeStatus::Down
+                } else {
+                    EdgeStatus::Up
+                },
+                metadata: HashMap::new(),
+            })
+            .collect()
     }
 
     // Filter for removing invalid edge update messages. These include messages
@@ -255,14 +309,15 @@ impl<M: Monitor> Membership<M> {
             return false;
         }
 
-        // An invariant to maintain is that a node can only go into the membership set once and leave
-        // it once
+        // An invariant to maintain is that a node can only go into the membership set once
+        // and leave it once
         if message.edge_status == EdgeStatus::Down && !self.view.is_host_present(&dst) {
             return false;
         }
 
         if message.edge_status == EdgeStatus::Up {
-            // Add joiner data after the node is done being added to the set. Store in a temp location for now.
+            // Add joiner data after the node is done being added to the set. Store in a
+            // temp location for now.
             self.joiner_data.insert(
                 dst.clone(),
                 (
@@ -283,21 +338,39 @@ impl<M: Monitor> Membership<M> {
         let (tx, rx) = mpsc::channel(1000);
 
         for subject in self.view.get_subjects(&self.host_addr)? {
+            let (mon_tx, mon_rx) = oneshot::channel();
+
             let fut = self.monitor.monitor(
                 subject.clone(),
                 client.clone(),
                 self.current_config_id,
                 tx.clone(),
+                mon_rx,
             );
-            scheduler.push(Box::pin(fut.map(|_| SchedulerEvents::None)));
+            scheduler.push(fut.map(|_| SchedulerEvents::None));
+
+            self.monitor_cancellers.push(mon_tx);
         }
 
         Ok(rx)
     }
 
-    pub fn edge_failure_notification(&mut self, _subject: Endpoint, _config_id: ConfigId) {
-        // TODO: enqueue a new batch alert with this subject in the EdgeStatus::Down state≤
-        unimplemented!()
+    pub fn edge_failure_notification(&mut self, subject: Endpoint, config_id: ConfigId) {
+        if config_id != self.config_id {
+            return;
+        }
+
+        let alert = proto::Alert {
+            src: self.host_addr.clone(),
+            dst: subject,
+            edge_status: proto::EdgeStatus::Up,
+            config_id,
+            node_id: Some(msg.node_id.clone()),
+            ring_number: msg.ring_number,
+            metadata: None,
+        };
+
+        self.enqueue_alert(alert);
     }
 
     pub fn get_batch_alerts(&mut self) -> Option<proto::BatchedAlertMessage> {
@@ -326,9 +399,10 @@ impl<M: Monitor> Membership<M> {
     /// and any node that is currently in the membership list, but not in the proposal
     /// will be removed.
     pub async fn on_decide(&mut self, proposal: Vec<Endpoint>) -> Result<()> {
-        // TODO: Set up a way to cancel failure detector jobs
         // TODO: Handle metadata updates
         // TODO: Handle subscriptions
+
+        self.cancel_failure_detectors();
 
         for node in &proposal {
             if self.view.is_host_present(&node) {
@@ -349,9 +423,6 @@ impl<M: Monitor> Membership<M> {
 
         self.announced_proposal = false;
 
-        // TODO: Instantiate new consensus instance
-        // self.paxos = FastPaxos::new(self.host_addr, self.view.get_membership_size(), )
-
         if self.view.is_host_present(&self.host_addr) {
             // TODO: inform edge failure detector about config change
         } else {
@@ -360,9 +431,16 @@ impl<M: Monitor> Membership<M> {
             unimplemented!()
         }
 
+        // TODO: Instantiate new consensus instance
+        // self.paxos = FastPaxos::new(self.host_addr, self.view.get_membership_size(), )
+
         self.respond_to_joiners(proposal);
 
         Ok(())
+    }
+
+    fn cancel_failure_detectors(&mut self) {
+        self.monitor_cancellers.iter().for_each(|tx| tx.send(()));
     }
 
     fn respond_to_joiners(&mut self, proposal: Vec<Endpoint>) {

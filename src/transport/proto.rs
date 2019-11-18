@@ -13,13 +13,17 @@ pub enum RequestKind {
     Consensus(Consensus),
 }
 
-pub type Status = i32;
+#[derive(Debug, Clone, PartialEq)]
+pub enum NodeStatus {
+    Up,
+    Bootstrapping,
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ResponseKind {
     Join(JoinResponse),
     Response,
-    Probe(Status),
+    Probe(NodeStatus),
     Consensus,
 }
 

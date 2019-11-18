@@ -121,6 +121,7 @@ where
             monitor,
             self.current_config_id,
             paxos,
+            self.event_tx.clone(),
         );
 
         self.membership = Some(membership);
@@ -352,6 +353,7 @@ where
             monitor,
             self.current_config_id,
             paxos,
+            self.event_tx.clone(),
         );
 
         self.membership = Some(membership);

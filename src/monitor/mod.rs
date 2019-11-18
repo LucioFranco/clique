@@ -5,7 +5,7 @@ use crate::{
     transport::Client,
 };
 use std::future::Future;
-use tokio_sync::mpsc;
+use tokio_sync::{mpsc, oneshot};
 
 pub trait Monitor {
     type Future: Future<Output = ()> + Send + 'static;
@@ -16,5 +16,6 @@ pub trait Monitor {
         client: Client,
         current_config_id: ConfigId,
         notification_tx: mpsc::Sender<(Endpoint, ConfigId)>,
+        cancellation_rx: oneshot::Receiver<()>,
     ) -> Self::Future;
 }

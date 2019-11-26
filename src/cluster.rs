@@ -112,16 +112,16 @@ where
 
         let view = View::bootstrap(K as i32, vec![node_id], vec![listen_addr]);
         let cut_detector = CutDetector::new(K, H, L);
-        let monitor = monitor::PingPong::new(Duration::new(10), Duration::new(10));
+        let monitor = ping_pong::PingPong::new(Duration::new(10), Duration::new(10));
 
-        let membership = membership::Membership::new(
+        let membership = Membership::new(
             listen_addr,
             view,
             cut_detector,
             monitor,
             self.current_config_id,
-            paxos,
             self.event_tx.clone(),
+            &self.client,
         );
 
         self.membership = Some(membership);
@@ -344,16 +344,16 @@ where
 
         let view = View::bootstrap(K as i32, node_ids, endpoints);
         let cut_detector = CutDetector::new(K, H, L);
-        let monitor = monitor::PingPong::new(Duration::new(10), Duration::new(10));
+        let monitor = ping_pong::PingPong::new(Duration::new(10), Duration::new(10));
 
-        let membership = membership::Membership::new(
+        let membership = Membership::new(
             self.listen_target.clone().into(),
             view,
             cut_detector,
             monitor,
             self.current_config_id,
-            paxos,
             self.event_tx.clone(),
+            &self.client,
         );
 
         self.membership = Some(membership);

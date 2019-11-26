@@ -5,7 +5,7 @@ use crate::{
 };
 use futures::{future, FutureExt};
 use std::time::{Duration, Instant};
-use tokio_sync::mpsc;
+use tokio_sync::{mpsc, oneshot};
 use tokio_timer::{delay, Timeout};
 
 // Number of bootstrapping responses allowed by a node before being treated as a failure condition.
@@ -18,7 +18,7 @@ pub struct PingPong {
 }
 
 impl PingPong for PingPong {
-    pub fn new(timeout: Duration, tick_delay: Duration) -> Self {
+    fn new(timeout: Duration, tick_delay: Duration) -> Self {
         PingPong {
             timeout,
             tick_delay,

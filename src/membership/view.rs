@@ -186,6 +186,10 @@ impl View {
         self.rings.get(k as usize)
     }
 
+    pub fn get_ring_observers(&self, observer: &Endpoint, subject: &Endpoint) -> Vec<usize> {
+        
+    }
+
     /// Get the current configuration.
     pub fn get_config(&mut self) -> &mut Configuration {
         if self.should_update_configuration_id {

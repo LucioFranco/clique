@@ -1,4 +1,6 @@
 pub mod cut_detector;
+pub mod ring;
+pub mod view;
 
 use crate::{
     common::{ConfigId, Endpoint, NodeId, Scheduler, SchedulerEvents},
@@ -15,6 +17,8 @@ use crate::{
     },
 };
 use cut_detector::CutDetector;
+use view::View;
+
 use futures::FutureExt;
 use std::{
     collections::{HashMap, VecDeque},
@@ -22,7 +26,6 @@ use std::{
 };
 use tokio_sync::{mpsc, oneshot, watch};
 use tracing::info;
-use view::View;
 
 type OutboundResponse = oneshot::Sender<crate::Result<Response>>;
 
@@ -53,17 +56,16 @@ impl<M: Monitor> Membership<M> {
         monitor: M,
         current_config_id: ConfigId,
         event_tx: watch::Sender<Event>,
+        client: &Client,
     ) -> Self {
         // TODO: setup startup tasks
 
         let paxos = FastPaxos::new(
             host_addr,
             view.get_membership_size(),
-            self.client,
-            self.current_config_id,
+            client.clone(),
+            current_config_id,
         );
-
-        event_tx.send(Event::ViewChange(self.get_inititial_view_changes()));
 
         Self {
             host_addr,
@@ -83,12 +85,17 @@ impl<M: Monitor> Membership<M> {
         }
     }
 
+    fn send_initial_notification(&self) {
+        self.event_tx
+            .send(Event::ViewChange(self.get_inititial_view_changes()));
+    }
+
     fn get_inititial_view_changes(&self) -> Vec<NodeStatusChange> {
         let nodes = self.view.get_ring(0);
 
         nodes
             .iter()
-            .map(|i| NodeStatusChange {
+            .map(|_| NodeStatusChange {
                 endpoint: self.host_addr,
                 status: JoinStatus::Up,
                 metadata: HashMap::new(),
@@ -211,7 +218,7 @@ impl<M: Monitor> Membership<M> {
                 // safe to join
                 proto::JoinResponse {
                     sender: self.host_addr,
-                    status: JoinStatusCode::SafeToJoin,
+                    status: JoinStatus::SafeToJoin,
                     config_id: config.config_id(),
                     endpoints: config.endpoints.clone(),
                     identifiers: config.node_ids.clone(),
@@ -220,7 +227,7 @@ impl<M: Monitor> Membership<M> {
             } else {
                 proto::JoinResponse {
                     sender: self.host_addr,
-                    status: JoinStatusCode::ConfigChanged,
+                    status: JoinStatus::ConfigChanged,
                     config_id: config.config_id(),
                     endpoints: vec![],
                     identifiers: vec![],
@@ -357,13 +364,19 @@ impl<M: Monitor> Membership<M> {
 
     pub fn edge_failure_notification(&mut self, subject: Endpoint, config_id: ConfigId) {
         if config_id != self.config_id {
+            info!(
+                "Failure notification from old config.",
+                subject = subject,
+                config = self.view.get_current_config_id(),
+                old_config = config_id
+            );
             return;
         }
 
         let alert = proto::Alert {
             src: self.host_addr.clone(),
             dst: subject,
-            edge_status: proto::EdgeStatus::Up,
+            edge_status: proto::EdgeStatus::Down,
             config_id,
             node_id: Some(msg.node_id.clone()),
             ring_number: msg.ring_number,

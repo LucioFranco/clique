@@ -36,8 +36,6 @@ impl<T: AsRef<[u8]>> Ring<T> {
 
     /// Check if the value exists already within the ring.
     pub fn contains(&self, key: T) -> bool {
-        // TODO(lucio): Remove this clone since we only need a `AsRef<[u8]>` to
-        // do the `Ord` impl.
         let seeded_key = SeededKey::new(key, self.seed);
         self.set.contains(&seeded_key)
     }
@@ -61,8 +59,6 @@ impl<T: AsRef<[u8]>> Ring<T> {
     ///
     /// Returns `true` if the value was removed, `false` if the value didnt exist.
     pub fn remove(&mut self, key: T) -> bool {
-        // TODO(lucio): Remove this clone since we only need a `AsRef<[u8]>` to
-        // do the `Ord` impl.
         let seeded_key = SeededKey::new(key, self.seed);
         self.set.remove(&seeded_key)
     }

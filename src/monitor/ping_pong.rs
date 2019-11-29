@@ -17,8 +17,8 @@ pub struct PingPong {
     tick_delay: Duration,
 }
 
-impl PingPong for PingPong {
-    fn new(timeout: Duration, tick_delay: Duration) -> Self {
+impl PingPong {
+    pub fn new(timeout: Duration, tick_delay: Duration) -> Self {
         PingPong {
             timeout,
             tick_delay,

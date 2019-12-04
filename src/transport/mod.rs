@@ -83,7 +83,7 @@ impl Response {
         Self::new(kind)
     }
 
-    pub fn new_probe(status: proto::Status) -> Self {
+    pub fn new_probe(status: proto::JoinStatus) -> Self {
         let kind = proto::ResponseKind::Probe(status);
         Self::new(kind)
     }

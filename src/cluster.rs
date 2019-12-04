@@ -14,7 +14,7 @@ use futures::{
     FutureExt, StreamExt,
 };
 use std::{collections::HashMap, time::Duration};
-use tokio_sync::{oneshot, watch};
+use tokio_sync::{mpsc, oneshot, watch};
 use tokio_timer::Interval;
 
 const K: usize = 10;
@@ -61,7 +61,7 @@ where
     membership: Option<Membership<ping_pong::PingPong>>,
     transport: T,
     listen_target: Target,
-    event_tx: watch::Sender<Event>,
+    event_tx: mpsc::Sender<Event>,
     endpoint: Endpoint,
     node_id: NodeId,
     scheduler: Scheduler,
@@ -79,7 +79,7 @@ where
     pub(crate) async fn new(
         mut transport: T,
         listen_target: Target,
-        event_tx: watch::Sender<Event>,
+        event_tx: mpsc::Sender<Event>,
     ) -> Self {
         let server_stream = transport
             .listen_on(listen_target.clone())
@@ -112,16 +112,15 @@ where
 
         let view = View::bootstrap(K as i32, vec![node_id], vec![listen_addr]);
         let cut_detector = CutDetector::new(K, H, L);
-        let monitor = monitor::PingPong::new(Duration::new(10), Duration::new(10));
+        let monitor = ping_pong::PingPong::new(Duration::from_secs(10), Duration::from_secs(10));
 
-        let membership = membership::Membership::new(
+        let membership = Membership::new(
             listen_addr,
             view,
             cut_detector,
             monitor,
-            self.current_config_id,
-            paxos,
             self.event_tx.clone(),
+            &self.client,
         );
 
         self.membership = Some(membership);
@@ -130,57 +129,60 @@ where
     }
 
     pub async fn join(&mut self, seed_addr: Target) -> Result<()> {
-        for _ in 0..10 {
-            return self.join_attempt(seed_addr.into()).await?;
+        for _ in 0usize..10usize {
+            return self.join_attempt(seed_addr.into()).await;
         }
 
         Err(Error::new_join_phase2())
     }
 
     async fn run(&mut self) -> Result<()> {
-        let mut edge_failure_notifications_rx = self
-            .membership
-            .create_failure_detectors(&mut self.scheduler, &self.client)?
-            .fuse();
+        if let Some(mem) = self.membership {
+            let mut edge_failure_notifications_rx = mem
+                .create_failure_detectors(&mut self.scheduler, &self.client)?
+                .fuse();
 
-        let mut alert_batcher_interval = Interval::new_interval(Duration::from_millis(100)).fuse();
+            let mut alert_batcher_interval =
+                Interval::new_interval(Duration::from_millis(100)).fuse();
 
-        loop {
-            futures::select! {
-                request = self.server_stream.select_next_some() => {
-                    self.handle_server(request).await;
-                },
-                event = self.scheduler.select_next_some() => {
-                    match event {
-                        SchedulerEvents::StartClassicRound => {
-                            self.membership.start_classic_round().await?;
-                            continue;
-                        },
-                        SchedulerEvents::Decision(proposal) => {
-                            self.membership.on_decide(proposal).await?;
-                            continue;
+            loop {
+                futures::select! {
+                    request = self.server_stream.select_next_some() => {
+                        self.handle_server(request).await;
+                    },
+                    event = self.scheduler.select_next_some() => {
+                        match event {
+                            SchedulerEvents::StartClassicRound => {
+                                mem.start_classic_round().await?;
+                                continue;
+                            },
+                            SchedulerEvents::Decision(proposal) => {
+                                mem.on_decide(proposal).await?;
+                                continue;
+                            }
+                            SchedulerEvents::None => continue,
+                            _ => panic!("An unknown event type found. This cannot happen.")
                         }
-                        SchedulerEvents::None => continue,
-                        _ => panic!("An unknown event type found. This cannot happen.")
-                    }
-                },
-                request = self.client_stream.select_next_some() => {
-                    let task = self.handle_client(request);
-                    self.scheduler.push(task);
-                },
-                (subject, config_id) = edge_failure_notifications_rx.select_next_some() => {
-                    if let Some(m) = self.membership {
-                        m.edge_failure_notification(subject, config_id);
-                    }
-                },
-                _ = alert_batcher_interval.select_next_some() => {
-                    if let Some(msg) = self.membership.get_batch_alerts() {
-                        let req = proto::RequestKind::BatchedAlert(msg);
-                        self.client.broadcast(req).await?;
-                    }
-                },
-            };
+                    },
+                    request = self.client_stream.select_next_some() => {
+                        let task = self.handle_client(request);
+                        self.scheduler.push(task);
+                    },
+                    (subject, config_id) = edge_failure_notifications_rx.select_next_some() => {
+                            mem.edge_failure_notification(subject, config_id);
+                    },
+                    _ = alert_batcher_interval.select_next_some() => {
+                        if let Some(msg) = mem.get_batch_alerts() {
+                            let req = proto::RequestKind::BatchedAlert(msg);
+                            self.client.broadcast(req).await?;
+                        }
+                    },
+                };
+            }
         }
+
+        // TODO: create new error type
+        Err(Error::new_node_not_in_ring())
     }
 
     async fn handle_server(
@@ -188,9 +190,8 @@ where
         request: (Request, oneshot::Sender<crate::Result<Response>>),
     ) {
         let (request, response_tx) = request;
-        if let Some(m) = self.membership {
-            self.membership
-                .handle_message(request, response_tx, &mut self.scheduler)
+        if let Some(mem) = self.membership {
+            mem.handle_message(request, response_tx, &mut self.scheduler)
                 .await;
         }
     }
@@ -249,13 +250,13 @@ where
             .into_inner()
         {
             proto::ResponseKind::Join(res) => res,
-            _ => Error::new_join_phase1(),
+            _ => return Err(Error::new_join_phase1()),
         };
 
         if join_res.status != proto::JoinStatus::SafeToJoin
             && join_res.status != proto::JoinStatus::HostnameAlreadyInRing
         {
-            return Error::new_join_phase1();
+            return Err(Error::new_join_phase1());
         }
 
         let config_to_join = if join_res.status == proto::JoinStatus::HostnameAlreadyInRing {
@@ -344,16 +345,15 @@ where
 
         let view = View::bootstrap(K as i32, node_ids, endpoints);
         let cut_detector = CutDetector::new(K, H, L);
-        let monitor = monitor::PingPong::new(Duration::new(10), Duration::new(10));
+        let monitor = ping_pong::PingPong::new(Duration::from_secs(10), Duration::from_secs(10));
 
-        let membership = membership::Membership::new(
+        let membership = Membership::new(
             self.listen_target.clone().into(),
             view,
             cut_detector,
             monitor,
-            self.current_config_id,
-            paxos,
             self.event_tx.clone(),
+            &self.client,
         );
 
         self.membership = Some(membership);

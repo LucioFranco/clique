@@ -1,6 +1,6 @@
 use crate::{cluster::Cluster, cluster::Inner, event::Event, handle::Handle, transport::Transport};
 
-use tokio_sync::watch;
+use tokio_sync::mpsc;
 
 #[derive(Debug, Clone)]
 pub struct Builder<T, Target> {
@@ -21,7 +21,7 @@ where
     }
 
     pub async fn finish(mut self) -> Cluster<T, Target> {
-        let (event_tx, event_rx) = watch::channel(Event::new());
+        let (event_tx, event_rx) = mpsc::channel(10);
         let transport = self
             .transport
             .take()

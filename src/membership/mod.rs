@@ -353,7 +353,7 @@ impl<M: Monitor> Membership<M> {
                 tx.clone(),
                 mon_rx,
             );
-            scheduler.push(Pin::new(Box::new(fut.map(|_| SchedulerEvents::None))));
+            scheduler.push(Box::pin(fut.map(|_| SchedulerEvents::None)));
 
             self.monitor_cancellers.push(mon_tx);
         }

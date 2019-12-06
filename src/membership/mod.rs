@@ -11,10 +11,11 @@ use crate::{
     transport::{
         proto::{
             self, Alert, BatchedAlertMessage, EdgeStatus, JoinMessage, JoinResponse, JoinStatus,
-            Metadata, PreJoinMessage,
+            Metadata, PreJoinMessage, NodeStatus
         },
         Client, Request, Response,
     },
+    metadata_manager::MetadataManager
 };
 use cut_detector::CutDetector;
 use view::View;
@@ -23,6 +24,7 @@ use futures::FutureExt;
 use std::{
     collections::{HashMap, VecDeque},
     time::{Duration, Instant},
+    pin::Pin,
 };
 use tokio_sync::{mpsc, oneshot, watch};
 use tracing::info;
@@ -94,8 +96,8 @@ impl<M: Monitor> Membership<M> {
             .iter()
             .map(|_| NodeStatusChange {
                 endpoint: self.host_addr,
-                status: JoinStatus::Up,
-                metadata: HashMap::new(),
+                status: EdgeStatus::Up,
+                metadata: Metadata::default(),
             })
             .collect()
     }
@@ -238,7 +240,7 @@ impl<M: Monitor> Membership<M> {
 
     // Invoked by observers of a node for failure detection
     fn handle_probe_message(&self) -> Response {
-        Response::new_probe(1) // TODO: FIXME THIS IS WRONG
+        Response::new_probe(NodeStatus::Up) // TODO: FIXME THIS IS WRONG
     }
 
     // Receives edge update events and delivers them to the cut detector to check if it will
@@ -286,13 +288,13 @@ impl<M: Monitor> Membership<M> {
         proposal
             .iter()
             .map(|node| NodeStatusChange {
-                endpoint: node,
+                endpoint: node.to_string(),
                 status: if self.view.is_host_present(node) {
                     EdgeStatus::Down
                 } else {
                     EdgeStatus::Up
                 },
-                metadata: HashMap::new(),
+                metadata: Metadata::default(),
             })
             .collect()
     }
@@ -351,7 +353,7 @@ impl<M: Monitor> Membership<M> {
                 tx.clone(),
                 mon_rx,
             );
-            scheduler.push(fut.map(|_| SchedulerEvents::None));
+            scheduler.push(Pin::new(Box::new(fut.map(|_| SchedulerEvents::None))));
 
             self.monitor_cancellers.push(mon_tx);
         }
@@ -360,13 +362,14 @@ impl<M: Monitor> Membership<M> {
     }
 
     pub fn edge_failure_notification(&mut self, subject: Endpoint, config_id: ConfigId) {
-        if config_id != self.config_id {
-            info!(
-                target: "Failure notification from old config.",
-                subject = subject,
-                config = self.view.get_current_config_id(),
-                old_config = config_id
-            );
+        if config_id != self.view.get_current_config_id() {
+            // TODO: Figure out why &String does not impl Value
+            // info!(
+            //     target: "Failure notification from old config.",
+            //     subject = subject,
+            //     config = self.view.get_current_config_id(),
+            //     old_config = config_id
+            // );
             return;
         }
 
@@ -376,7 +379,7 @@ impl<M: Monitor> Membership<M> {
             edge_status: proto::EdgeStatus::Down,
             config_id,
             node_id: None,
-            ring_number: self.view.get_ring_numbers(),
+            ring_number: self.view.get_ring_numbers(&self.host_addr, &subject),
             metadata: None,
         };
 
@@ -450,7 +453,7 @@ impl<M: Monitor> Membership<M> {
     }
 
     fn cancel_failure_detectors(&mut self) {
-        self.monitor_cancellers.iter().for_each(|tx| tx.send(()));
+        self.monitor_cancellers.iter().for_each(|tx| tx.send(()).unwrap());
     }
 
     fn respond_to_joiners(&mut self, proposal: Vec<Endpoint>) {

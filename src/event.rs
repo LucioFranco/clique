@@ -19,6 +19,7 @@ impl Event {
     }
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub struct NodeStatusChange {
     endpoint: Endpoint,
     status: EdgeStatus,

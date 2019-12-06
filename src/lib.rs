@@ -18,6 +18,7 @@ mod monitor;
 #[cfg(test)]
 mod support;
 pub mod transport;
+mod metadata_manager;
 
 pub use self::builder::Builder;
 pub use self::cluster::Cluster;

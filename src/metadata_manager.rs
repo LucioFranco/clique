@@ -1,4 +1,4 @@
-use crate::{common::Endpoint, transport::Metadata};
+use crate::{common::Endpoint, transport::proto::Metadata};
 
 use std::collections::HashMap;
 
@@ -7,6 +7,10 @@ pub struct MetadataManager {
 }
 
 impl MetadataManager {
+    pub fn new() -> Self {
+        MetadataManager { role_map: HashMap::<Endpoint, Metadata>::new() }
+    }
+
     pub fn get(&mut self, key: &Endpoint) -> Option<&Metadata> {
         self.role_map.get(key).or_else_with(Metadata::default)
     }

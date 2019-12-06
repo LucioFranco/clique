@@ -37,6 +37,7 @@ where
     pub(crate) fn new(handle: Handle, inner: Inner<T, Target>) -> Self {
         Cluster { handle, inner }
     }
+
     pub fn builder() -> Builder<T, Target> {
         Builder::new()
     }
@@ -218,18 +219,23 @@ where
                 Box::pin(task)
             }
             Broadcast(request) => {
-                let view = self.membership.view();
+                if let Some(mem) = self.membership {
+                    // get all the members in the current config
+                    let view = mem.view();
 
-                let mut tasks = Vec::new();
-                for endpoint in view {
-                    let task = self
-                        .transport
-                        .send(Request::new(endpoint.clone(), request.clone()));
+                    let mut tasks = Vec::new();
+                    for endpoint in view {
+                        let task = self
+                            .transport
+                            .send(Request::new(endpoint.clone(), request.clone()));
 
-                    tasks.push(task);
+                        tasks.push(task);
+                    }
+
+                    Box::pin(future::join_all(tasks).map(|_| SchedulerEvents::None))
+                } else {
+                    panic!("This should not happen");
                 }
-
-                Box::pin(future::join_all(tasks).map(|_| SchedulerEvents::None))
             }
         }
     }

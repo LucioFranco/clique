@@ -68,6 +68,10 @@ impl Response {
         }
     }
 
+    pub fn kind(&self) -> &proto::ResponseKind {
+        &self.kind
+    }
+
     pub fn consensus() -> Self {
         Self {
             kind: proto::ResponseKind::Consensus,
@@ -83,7 +87,7 @@ impl Response {
         Self::new(kind)
     }
 
-    pub fn new_probe(status: proto::JoinStatus) -> Self {
+    pub fn new_probe(status: proto::NodeStatus) -> Self {
         let kind = proto::ResponseKind::Probe(status);
         Self::new(kind)
     }

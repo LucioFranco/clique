@@ -46,8 +46,8 @@ impl Monitor for PingPong {
 
             loop {
                 match cancellation_rx.try_recv() {
-                    Ok(_) => continue,
-                    Err(_) => return,
+                    Ok(_) => (),
+                    Err(_) => break,
                 };
 
                 let fut = client.send(subject.clone(), proto::RequestKind::Probe);
@@ -57,12 +57,14 @@ impl Monitor for PingPong {
                     failures += 1;
                 }
 
-                if let Ok(response) = result {
-                    if response.status == proto::NodeStatus::Bootstrapping {
-                        bootstraps += 1;
+                if let Ok(Ok(response)) = result {
+                    if let proto::ResponseKind::Probe(status) = response.kind() {
+                        if *status == proto::NodeStatus::Bootstrapping {
+                            bootstraps += 1;
 
-                        if bootstraps > BOOTSTRAP_COUNT_THRESHOLD {
-                            failures += 1;
+                            if bootstraps > BOOTSTRAP_COUNT_THRESHOLD {
+                                failures += 1;
+                            }
                         }
                     }
                 }

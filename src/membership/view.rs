@@ -186,7 +186,9 @@ impl View {
         self.rings.get(k as usize)
     }
 
-    pub fn get_ring_observers(&self, observer: &Endpoint, subject: &Endpoint) -> Vec<usize> {}
+    pub fn get_ring_numbers(&self, observer: &Endpoint, subject: &Endpoint) -> Vec<i32> {
+        unimplemented!("Implement this idiot!")
+    }
 
     /// Get the current configuration.
     pub fn get_config(&mut self) -> &mut Configuration {

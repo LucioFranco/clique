@@ -14,6 +14,7 @@ mod error;
 mod event;
 mod handle;
 mod membership;
+mod metadata_manager;
 mod monitor;
 #[cfg(test)]
 mod support;

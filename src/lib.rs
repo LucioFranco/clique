@@ -14,11 +14,11 @@ mod error;
 mod event;
 mod handle;
 mod membership;
+mod metadata_manager;
 mod monitor;
 #[cfg(test)]
 mod support;
 pub mod transport;
-mod metadata_manager;
 
 pub use self::builder::Builder;
 pub use self::cluster::Cluster;

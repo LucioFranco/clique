@@ -7,15 +7,15 @@ use crate::{
     consensus::FastPaxos,
     error::Result,
     event::{Event, NodeStatusChange},
+    metadata_manager::MetadataManager,
     monitor::Monitor,
     transport::{
         proto::{
             self, Alert, BatchedAlertMessage, EdgeStatus, JoinMessage, JoinResponse, JoinStatus,
-            Metadata, PreJoinMessage, NodeStatus
+            Metadata, NodeStatus, PreJoinMessage,
         },
         Client, Request, Response,
     },
-    metadata_manager::MetadataManager
 };
 use cut_detector::CutDetector;
 use view::View;
@@ -23,8 +23,8 @@ use view::View;
 use futures::FutureExt;
 use std::{
     collections::{HashMap, VecDeque},
-    time::{Duration, Instant},
     pin::Pin,
+    time::{Duration, Instant},
 };
 use tokio_sync::{mpsc, oneshot, watch};
 use tracing::info;
@@ -453,7 +453,9 @@ impl<M: Monitor> Membership<M> {
     }
 
     fn cancel_failure_detectors(&mut self) {
-        self.monitor_cancellers.iter().for_each(|tx| tx.send(()).unwrap());
+        self.monitor_cancellers
+            .iter()
+            .for_each(|tx| tx.send(()).unwrap());
     }
 
     fn respond_to_joiners(&mut self, proposal: Vec<Endpoint>) {

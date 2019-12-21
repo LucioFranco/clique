@@ -350,7 +350,7 @@ where
         // assemble to MemberShipService object and start and RPCServer
         let endpoints = join_res.endpoints;
         let node_ids = join_res.identifiers;
-        let metadata = join_res.cluster_metadata;
+        let _metadata = join_res.cluster_metadata;
 
         debug_assert!(endpoints.len() > 0);
         debug_assert!(node_ids.len() > 0);

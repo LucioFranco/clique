@@ -11,7 +11,7 @@ jobs:
         with:
           rust-version: stable
       - uses: actions/checkout@master
-      - Name: Check
+      - name: Check
         run: cargo check --all --examples --tests
   test-os:
     # Test against stable Rust across macOS, Windows, and Linux.

@@ -1,18 +1,32 @@
 name: Rust - test
 
-on: [push]
+on: [push, pull_request]
 
 jobs:
-  build:
-
+  check:
+    # Run `cargo check` first to ensure that the pushed code at least compiles.
+    runs-on: [ubuntu-latest]
+    steps:
+      - uses: hecrj/setup-rust-action@v1
+        with:
+          rust-version: stable
+      - uses: actions/checkout@master
+      - Name: Check
+        run: cargo check --all --examples --tests
+  test-os:
+    # Test against stable Rust across macOS, Windows, and Linux.
+    needs: check
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-
+        os: [ubuntu-latest, windows-latest, macOS-latest]
     steps:
-    - uses: actions/checkout@v1
+    - uses: hecrj/setup-rust-action@v1
+      with:
+        rust-version: stable
+    - uses: actions/checkout@master
     - name: Build
-      run: cargo build --verbose
+      run: cargo build
     - name: Run tests
-      run: cargo test --verbose
+      run: cargo test --all
+

@@ -13,10 +13,9 @@ use rand::Rng;
 use std::{
     collections::{HashMap, HashSet},
     sync::atomic::{AtomicBool, Ordering},
-    time::{Duration, Instant},
+    time::Duration,
 };
-use tokio_sync::oneshot;
-use tokio_timer::delay;
+use tokio::{sync::oneshot, time::delay_for};
 
 use paxos::Paxos;
 
@@ -71,7 +70,7 @@ impl FastPaxos {
         proposal: Vec<Endpoint>,
         scheduler: &mut Scheduler,
     ) -> Result<()> {
-        let mut paxos_delay = delay(Instant::now() + self.get_random_delay()).fuse();
+        let mut paxos_delay = delay_for(self.get_random_delay()).fuse();
 
         let (tx, cancel_rx) = oneshot::channel();
         let mut cancel_rx = cancel_rx.fuse();

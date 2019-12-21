@@ -4,7 +4,7 @@ use crate::{
     transport::{proto::RequestKind, Request, Response},
 };
 use futures::{stream::Fuse, StreamExt};
-use tokio_sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot};
 
 pub type RequestStream = Fuse<mpsc::Receiver<RequestType>>;
 

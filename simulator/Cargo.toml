@@ -8,4 +8,4 @@ edition = "2018"
 
 [dependencies]
 clique = { path = ".."}
-futures = { version = "=0.3.0-alpha.19", package = "futures-preview", features = ["async-await", "io-compat", "compat"] }
+futures = "0.3"

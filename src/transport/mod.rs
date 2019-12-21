@@ -6,7 +6,7 @@ pub use self::client::Client;
 use crate::common::Endpoint;
 use futures::Stream;
 use std::future::Future;
-use tokio_sync::oneshot;
+use tokio::sync::oneshot;
 
 pub type StreamItem = (Request, oneshot::Sender<crate::Result<Response>>);
 

@@ -7,7 +7,6 @@ use crate::{
     consensus::FastPaxos,
     error::Result,
     event::{Event, NodeStatusChange},
-    metadata_manager::MetadataManager,
     monitor::Monitor,
     transport::{
         proto::{
@@ -23,10 +22,9 @@ use view::View;
 use futures::FutureExt;
 use std::{
     collections::{HashMap, VecDeque},
-    pin::Pin,
     time::{Duration, Instant},
 };
-use tokio_sync::{mpsc, oneshot, watch};
+use tokio::sync::{broadcast, oneshot};
 use tracing::info;
 
 type OutboundResponse = oneshot::Sender<crate::Result<Response>>;
@@ -44,7 +42,7 @@ pub struct Membership<M> {
     paxos: FastPaxos,
     announced_proposal: bool,
     joiner_data: HashMap<Endpoint, (NodeId, Metadata)>,
-    event_tx: mpsc::Sender<Event>,
+    event_tx: broadcast::Sender<Event>,
     monitor_cancellers: Vec<oneshot::Sender<()>>,
 }
 
@@ -55,7 +53,7 @@ impl<M: Monitor> Membership<M> {
         view: View,
         cut_detector: CutDetector,
         monitor: M,
-        event_tx: mpsc::Sender<Event>,
+        event_tx: broadcast::Sender<Event>,
         client: &Client,
     ) -> Self {
         // TODO: setup startup tasks
@@ -130,7 +128,7 @@ impl<M: Monitor> Membership<M> {
             BatchedAlert(msg) => {
                 let res = self.handle_batched_alert_message(msg, scheduler).await;
                 if let Err(_e) = res {
-                    unimplemented!()
+                    panic!("Wait this wasn't supposed to happen!");
                 }
             }
             Probe => {
@@ -139,7 +137,7 @@ impl<M: Monitor> Membership<M> {
             Consensus(msg) => {
                 let res = self.paxos.handle_message(msg, scheduler).await;
                 if let Err(_e) = res {
-                    unimplemented!()
+                    panic!("Wait this wasn't supposed to happen!");
                 }
             }
         };
@@ -340,8 +338,8 @@ impl<M: Monitor> Membership<M> {
         &mut self,
         scheduler: &mut Scheduler,
         client: &Client,
-    ) -> Result<mpsc::Receiver<(Endpoint, ConfigId)>> {
-        let (tx, rx) = mpsc::channel(1000);
+    ) -> Result<broadcast::Receiver<(Endpoint, ConfigId)>> {
+        let (tx, rx) = broadcast::channel(1000);
 
         for subject in self.view.get_subjects(&self.host_addr)? {
             let (mon_tx, mon_rx) = oneshot::channel();
@@ -441,7 +439,7 @@ impl<M: Monitor> Membership<M> {
         } else {
             // We need to gracefully exit by calling a user handler and invalidating the current
             // session
-            unimplemented!()
+            unimplemented!("How do you manage a callback again?");
         }
 
         // TODO: Instantiate new consensus instance

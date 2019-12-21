@@ -1,21 +1,22 @@
 use crate::{
     builder::Builder,
     common::{Endpoint, NodeId, Scheduler, SchedulerEvents},
-    error::{Error, Result},
     event::Event,
+    error::{Error, Result},
     handle::Handle,
     membership::{cut_detector::CutDetector, view::View, Membership},
     monitor::ping_pong,
     transport::{client, proto, Client, Request, Response, Transport},
 };
 use futures::{
-    future::{self, BoxFuture},
-    stream::Fuse,
-    FutureExt, StreamExt,
+    future::{self, BoxFuture, FutureExt},
+    stream::{Fuse, StreamExt},
 };
 use std::{collections::HashMap, time::Duration};
-use tokio_sync::{mpsc, oneshot, watch};
-use tokio_timer::Interval;
+use tokio::{
+    sync::{broadcast, oneshot},
+    time::interval,
+};
 
 const K: usize = 10;
 const H: usize = 9;
@@ -62,12 +63,12 @@ where
     membership: Option<Membership<ping_pong::PingPong>>,
     transport: T,
     listen_target: Target,
-    event_tx: mpsc::Sender<Event>,
+    event_tx: broadcast::Sender<Event>,
     endpoint: Endpoint,
     node_id: NodeId,
     scheduler: Scheduler,
     client: Client,
-    client_stream: Fuse<client::RequestStream>,
+    client_stream: client::RequestStream,
     server_stream: Fuse<T::ServerStream>,
 }
 
@@ -80,7 +81,7 @@ where
     pub(crate) async fn new(
         mut transport: T,
         listen_target: Target,
-        event_tx: mpsc::Sender<Event>,
+        event_tx: broadcast::Sender<Event>,
     ) -> Self {
         let server_stream = transport
             .listen_on(listen_target.clone())
@@ -100,9 +101,9 @@ where
             event_tx,
             endpoint,
             node_id,
-            scheduler: Scheduler::new(),
             client,
-            client_stream: client_stream.fuse(),
+            client_stream,
+            scheduler: Scheduler::new(),
             server_stream: server_stream.fuse(),
         }
     }
@@ -143,8 +144,7 @@ where
                 .create_failure_detectors(&mut self.scheduler, &self.client)?
                 .fuse();
 
-            let mut alert_batcher_interval =
-                Interval::new_interval(Duration::from_millis(100)).fuse();
+            let mut alert_batcher_interval = interval(Duration::from_millis(100)).fuse();
 
             loop {
                 futures::select! {

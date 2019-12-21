@@ -5,7 +5,7 @@ use crate::{
     transport::Client,
 };
 use std::future::Future;
-use tokio_sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot};
 
 pub trait Monitor {
     type Future: Future<Output = ()> + Send + 'static;

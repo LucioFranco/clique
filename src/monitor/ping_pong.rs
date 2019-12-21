@@ -4,9 +4,11 @@ use crate::{
     transport::{proto, Client},
 };
 use futures::{future, FutureExt};
-use std::time::{Duration, Instant};
-use tokio_sync::{mpsc, oneshot};
-use tokio_timer::{delay, Timeout};
+use std::time::Duration;
+use tokio::{
+    sync::{mpsc, oneshot},
+    time::{delay_for, timeout},
+};
 
 // Number of bootstrapping responses allowed by a node before being treated as a failure condition.
 const BOOTSTRAP_COUNT_THRESHOLD: usize = 30;
@@ -37,7 +39,7 @@ impl Monitor for PingPong {
         mut notification_tx: mpsc::Sender<(Endpoint, ConfigId)>,
         cancellation_rx: oneshot::Receiver<()>,
     ) -> Self::Future {
-        let timeout = self.timeout;
+        let req_timeout = self.timeout;
         let tick_delay = self.tick_delay;
 
         async move {
@@ -51,7 +53,7 @@ impl Monitor for PingPong {
                 };
 
                 let fut = client.send(subject.clone(), proto::RequestKind::Probe);
-                let result = Timeout::new(fut, timeout).await;
+                let result = timeout(req_timeout, fut).await;
 
                 if result.is_err() {
                     failures += 1;
@@ -77,7 +79,7 @@ impl Monitor for PingPong {
                     return;
                 }
 
-                delay(Instant::now() + tick_delay).await;
+                delay_for(tick_delay).await;
             }
         }
         .boxed()

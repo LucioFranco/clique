@@ -4,15 +4,15 @@ use std::{
     pin::Pin,
     task::{Context, Poll},
 };
-use tokio_sync::mpsc;
+use tokio::sync::broadcast;
 
 #[derive(Debug, Clone)]
 pub struct Handle {
-    event_rx: mpsc::Receiver<Event>,
+    event_rx: broadcast::Receiver<Event>,
 }
 
 impl Handle {
-    pub fn new(event_rx: mpsc::Receiver<Event>) -> Self {
+    pub fn new(event_rx: broadcast::Receiver<Event>) -> Self {
         Handle { event_rx }
     }
 }
@@ -29,13 +29,13 @@ impl Stream for Handle {
 mod tests {
     use super::*;
     use crate::event::Event;
-    use tokio_sync::mpsc;
+    use tokio_sync::broadcast;
 
     #[test]
     fn unpin() {
         fn assert_unpin<T: Unpin>(_: T) {}
 
-        let (_tx, rx) = mpsc::channel(Event::Start);
+        let (_tx, rx) = broadcast::channel(10);
 
         assert_unpin(Handle { event_rx: rx });
     }

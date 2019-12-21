@@ -1,4 +1,4 @@
-use crate::{cluster::Cluster, cluster::Inner, handle::Handle, transport::Transport};
+use crate::{cluster::Cluster, cluster::Inner, transport::Transport};
 
 use tokio::sync::broadcast;
 
@@ -30,10 +30,9 @@ where
             .target
             .take()
             .unwrap_or_else(|| panic!("Unable to get target"));
-        let inner = Inner::new(transport, target, event_tx).await;
-        let handle = Handle::new(event_rx);
+        let inner = Inner::new(transport, target, event_tx.clone()).await;
 
-        Cluster::new(handle, inner)
+        Cluster::new(event_tx, inner)
     }
 
     pub fn transport(mut self, transport: T) -> Self {

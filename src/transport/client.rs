@@ -68,7 +68,7 @@ impl Client {
 mod tests {
     use super::*;
     use crate::transport::{
-        proto::{RequestKind, ResponseKind},
+        proto::{NodeStatus, RequestKind, ResponseKind},
         Response,
     };
     use futures::StreamExt;
@@ -80,7 +80,7 @@ mod tests {
         tokio::spawn(async move {
             match rx.next().await.unwrap() {
                 RequestType::Unary(_req, tx) => {
-                    let res = Response::new(ResponseKind::Probe(42));
+                    let res = Response::new(ResponseKind::Probe(NodeStatus::Up));
 
                     tx.send(Ok(res)).unwrap();
                 }
@@ -108,7 +108,7 @@ mod tests {
 
                 // This simulates what the server does when it tries to send, it may
                 // ignore the error as the sender could be dropped.
-                let res = Response::new(ResponseKind::Probe(42));
+                let res = Response::new(ResponseKind::Probe(NodeStatus::Up));
                 let _ = tx.send(Ok(res));
             }
             _ => panic!("wrong request type"),

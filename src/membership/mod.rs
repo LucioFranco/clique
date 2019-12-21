@@ -24,7 +24,7 @@ use std::{
     collections::{HashMap, VecDeque},
     time::{Duration, Instant},
 };
-use tokio::sync::{broadcast, oneshot};
+use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::info;
 
 type OutboundResponse = oneshot::Sender<crate::Result<Response>>;
@@ -59,7 +59,7 @@ impl<M: Monitor> Membership<M> {
         // TODO: setup startup tasks
 
         let paxos = FastPaxos::new(
-            host_addr,
+            host_addr.clone(),
             view.get_membership_size(),
             client.clone(),
             view.get_current_config_id(),
@@ -93,7 +93,7 @@ impl<M: Monitor> Membership<M> {
         nodes
             .iter()
             .map(|_| NodeStatusChange {
-                endpoint: self.host_addr,
+                endpoint: self.host_addr.clone(),
                 status: EdgeStatus::Up,
                 metadata: Metadata::default(),
             })
@@ -183,10 +183,9 @@ impl<M: Monitor> Membership<M> {
     }
 
     pub async fn handle_join(&mut self, msg: JoinMessage, response_tx: OutboundResponse) {
-        let config = self.view.get_config();
-        let current_config_id = config.config_id();
+        if msg.config_id == self.view.get_current_config_id() {
+            let config = self.view.get_config();
 
-        if msg.config_id == current_config_id {
             self.joiners_to_respond
                 .entry(msg.sender.clone())
                 .or_insert_with(VecDeque::new)
@@ -196,7 +195,7 @@ impl<M: Monitor> Membership<M> {
                 src: self.host_addr.clone(),
                 dst: msg.sender.clone(),
                 edge_status: proto::EdgeStatus::Up,
-                config_id: current_config_id,
+                config_id: config.config_id(),
                 node_id: Some(msg.node_id.clone()),
                 ring_number: msg.ring_number,
                 metadata: None,
@@ -209,12 +208,14 @@ impl<M: Monitor> Membership<M> {
             let response = if self.view.is_host_present(&msg.sender)
                 && self.view.is_node_id_present(&msg.node_id)
             {
+                let config = self.view.get_config();
+
                 // Race condition where a observer already crossed H messages for the joiner and
                 // changed the configuration, but the JoinPhase2 message shows up at the observer
                 // after it has already added the joiner. In this case, simply tell the joiner it's
                 // safe to join
                 proto::JoinResponse {
-                    sender: self.host_addr,
+                    sender: self.host_addr.clone(),
                     status: JoinStatus::SafeToJoin,
                     config_id: config.config_id(),
                     endpoints: config.endpoints.clone(),
@@ -223,9 +224,9 @@ impl<M: Monitor> Membership<M> {
                 }
             } else {
                 proto::JoinResponse {
-                    sender: self.host_addr,
+                    sender: self.host_addr.clone(),
                     status: JoinStatus::ConfigChanged,
-                    config_id: config.config_id(),
+                    config_id: self.view.get_current_config_id(),
                     endpoints: vec![],
                     identifiers: vec![],
                     cluster_metadata: HashMap::new(),
@@ -273,7 +274,7 @@ impl<M: Monitor> Membership<M> {
             self.announced_proposal = true;
 
             self.event_tx.send(Event::ViewChangeProposal(
-                self.create_node_status_change_list(proposal),
+                self.create_node_status_change_list(proposal.clone()),
             ));
 
             self.paxos.propose(proposal, scheduler).await?
@@ -338,8 +339,8 @@ impl<M: Monitor> Membership<M> {
         &mut self,
         scheduler: &mut Scheduler,
         client: &Client,
-    ) -> Result<broadcast::Receiver<(Endpoint, ConfigId)>> {
-        let (tx, rx) = broadcast::channel(1000);
+    ) -> Result<mpsc::Receiver<(Endpoint, ConfigId)>> {
+        let (tx, rx) = mpsc::channel(1000);
 
         for subject in self.view.get_subjects(&self.host_addr)? {
             let (mon_tx, mon_rx) = oneshot::channel();
@@ -373,7 +374,7 @@ impl<M: Monitor> Membership<M> {
 
         let alert = proto::Alert {
             src: self.host_addr.clone(),
-            dst: subject,
+            dst: subject.clone(),
             edge_status: proto::EdgeStatus::Down,
             config_id,
             node_id: None,
@@ -451,9 +452,9 @@ impl<M: Monitor> Membership<M> {
     }
 
     fn cancel_failure_detectors(&mut self) {
-        self.monitor_cancellers
-            .iter()
-            .for_each(|tx| tx.send(()).unwrap());
+        for signal in self.monitor_cancellers.drain(..) {
+            let _ = signal.send(());
+        }
     }
 
     fn respond_to_joiners(&mut self, proposal: Vec<Endpoint>) {

@@ -14,10 +14,11 @@ impl MetadataManager {
     }
 
     pub fn get(&mut self, key: &Endpoint) -> Option<&Metadata> {
-        self.role_map.get(key).or(Some(&Metadata::default()))
+        // self.role_map.get(key).or(Some(Metadata::default()))
+        self.role_map.get(key)
     }
 
-    pub fn add_metadata(&mut self, roles: HashMap<Endpoint, Metadata>) {
+    pub fn add_metadata(&mut self, mut roles: HashMap<Endpoint, Metadata>) {
         roles.drain().for_each(|(key, val)| {
             self.role_map.entry(key).or_insert(val);
         });

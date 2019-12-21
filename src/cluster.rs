@@ -1,9 +1,8 @@
 use crate::{
     builder::Builder,
     common::{Endpoint, NodeId, Scheduler, SchedulerEvents},
-    event::Event,
     error::{Error, Result},
-    handle::Handle,
+    event::Event,
     membership::{cut_detector::CutDetector, view::View, Membership},
     monitor::ping_pong,
     transport::{client, proto, Client, Request, Response, Transport},
@@ -22,11 +21,13 @@ const K: usize = 10;
 const H: usize = 9;
 const L: usize = 4;
 
+type Handle = broadcast::Receiver<Event>;
+
 pub struct Cluster<T, Target>
 where
     T: Transport<Target>,
 {
-    handle: Handle,
+    handle: broadcast::Sender<Event>,
     inner: Inner<T, Target>,
 }
 
@@ -35,7 +36,7 @@ where
     T: Transport<Target> + Send,
     Target: Into<Endpoint> + Send + Clone,
 {
-    pub(crate) fn new(handle: Handle, inner: Inner<T, Target>) -> Self {
+    pub(crate) fn new(handle: broadcast::Sender<Event>, inner: Inner<T, Target>) -> Self {
         Cluster { handle, inner }
     }
 
@@ -44,7 +45,7 @@ where
     }
 
     pub fn handle(&self) -> Handle {
-        self.handle.clone()
+        self.handle.subscribe()
     }
 
     pub async fn start(&mut self) -> Result<()> {
@@ -112,7 +113,7 @@ where
         let node_id = NodeId::new();
         let listen_addr = self.listen_target.clone().into();
 
-        let view = View::bootstrap(K as i32, vec![node_id], vec![listen_addr]);
+        let view = View::bootstrap(K as i32, vec![node_id], vec![listen_addr.clone()]);
         let cut_detector = CutDetector::new(K, H, L);
         let monitor = ping_pong::PingPong::new(Duration::from_secs(10), Duration::from_secs(10));
 
@@ -139,10 +140,9 @@ where
     }
 
     async fn run(&mut self) -> Result<()> {
-        if let Some(mem) = self.membership {
-            let mut edge_failure_notifications_rx = mem
-                .create_failure_detectors(&mut self.scheduler, &self.client)?
-                .fuse();
+        if let Some(mut mem) = self.membership.take() {
+            let mut edge_failure_notifications_rx =
+                mem.create_failure_detectors(&mut self.scheduler, &self.client)?;
 
             let mut alert_batcher_interval = interval(Duration::from_millis(100)).fuse();
 
@@ -169,8 +169,14 @@ where
                         let task = self.handle_client(request);
                         self.scheduler.push(task);
                     },
-                    (subject, config_id) = edge_failure_notifications_rx.select_next_some() => {
-                            mem.edge_failure_notification(subject, config_id);
+                    res = edge_failure_notifications_rx.recv().fuse() => {
+                        let (subject, config_id) = res.unwrap();
+                        // match res {
+                        //     Ok(Some((subject, config_id))) =>mem.edge_failure_notification(subject, config_id),
+                        //     Ok(None) => continue,
+                        //     Err(e) => todo!(),
+                        // }
+
                     },
                     _ = alert_batcher_interval.select_next_some() => {
                         if let Some(msg) = mem.get_batch_alerts() {
@@ -191,7 +197,7 @@ where
         request: (Request, oneshot::Sender<crate::Result<Response>>),
     ) {
         let (request, response_tx) = request;
-        if let Some(mem) = self.membership {
+        if let Some(mem) = &mut self.membership {
             mem.handle_message(request, response_tx, &mut self.scheduler)
                 .await;
         }
@@ -219,7 +225,7 @@ where
                 Box::pin(task)
             }
             Broadcast(request) => {
-                if let Some(mem) = self.membership {
+                if let Some(mem) = &mut self.membership {
                     // get all the members in the current config
                     let view = mem.view();
 

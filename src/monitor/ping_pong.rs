@@ -37,7 +37,7 @@ impl Monitor for PingPong {
         mut client: Client,
         current_config_id: ConfigId,
         mut notification_tx: mpsc::Sender<(Endpoint, ConfigId)>,
-        cancellation_rx: oneshot::Receiver<()>,
+        mut cancellation_rx: oneshot::Receiver<()>,
     ) -> Self::Future {
         let req_timeout = self.timeout;
         let tick_delay = self.tick_delay;

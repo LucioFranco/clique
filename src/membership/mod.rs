@@ -376,6 +376,7 @@ impl<M: Monitor> Membership<M> {
             //     config = self.view.get_current_config_id(),
             //     old_config = config_id
             // );
+            //
             return;
         }
 

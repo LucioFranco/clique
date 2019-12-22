@@ -10,8 +10,7 @@ jobs:
       - uses: hecrj/setup-rust-action@v1
         with:
           rust-version: stable
-      - name: Install rustfmt
-        run: rustup component add rustfmt
+
       - uses: actions/checkout@master
       - name: Check
         run: cargo check --all --examples --tests
@@ -26,6 +25,8 @@ jobs:
     - uses: hecrj/setup-rust-action@v1
       with:
         rust-version: stable
+    - name: Install rustfmt
+      run: rustup component add rustfmt
     - uses: actions/checkout@master
     - name: Build
       run: cargo build

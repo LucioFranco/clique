@@ -10,6 +10,7 @@ use crate::{
     },
 };
 use std::{
+    cmp::Ordering,
     collections::{HashMap, HashSet},
     convert::TryInto,
     hash::Hasher,
@@ -261,26 +262,29 @@ fn select_proposal(messages: &[Phase1bMessage], size: usize) -> Vec<Endpoint> {
     let collected_vals_set: HashSet<Vec<Endpoint>> = messages
         .iter()
         .filter(|msg| msg.vrnd == max_vrnd_so_far)
-        .filter(|msg| msg.vval.len() > 0)
+        .filter(|msg| msg.vval.is_empty())
         .map(|msg| msg.vval.clone())
         .collect();
 
     let mut chosen_proposal = None;
 
-    if collected_vals_set.len() == 1 {
-        // If there is only one value in the set, choose that.
-        chosen_proposal = Some(collected_vals_set.iter().next().unwrap());
-    } else if collected_vals_set.len() > 1 {
-        let mut counters = HashMap::new();
+    match collected_vals_set.len().cmp(&1) {
+        Ordering::Equal => {
+            // If there is only one value in the set, choose that.
+            chosen_proposal = Some(collected_vals_set.iter().next().unwrap());
+        }
+        Ordering::Greater => {
+            let mut counters = HashMap::new();
+            for values in collected_vals_set.iter() {
+                let count = counters.entry(values).and_modify(|e| *e += 1).or_insert(0);
 
-        for values in collected_vals_set.iter() {
-            let count = counters.entry(values).and_modify(|e| *e += 1).or_insert(0);
-
-            if *count + 1 > (size / 4) {
-                chosen_proposal = Some(values);
-                break;
+                if *count + 1 > (size / 4) {
+                    chosen_proposal = Some(values);
+                    break;
+                }
             }
         }
+        Ordering::Less => unreachable!(),
     }
 
     // At this point, no value has been selected yet and it is safe for the coordinator to pick any proposed value.
@@ -298,7 +302,7 @@ fn select_proposal(messages: &[Phase1bMessage], size: usize) -> Vec<Endpoint> {
         // Just grab the first value you find which is not empty.
         messages
             .iter()
-            .filter(|msg| msg.vval.len() > 0)
+            .filter(|msg| msg.vval.is_empty())
             .map(|msg| msg.vval.clone())
             .nth(0)
             .unwrap_or_else(Vec::new)

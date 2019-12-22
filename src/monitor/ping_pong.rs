@@ -46,7 +46,12 @@ impl Monitor for PingPong {
             let mut failures: usize = 0;
             let mut bootstraps: usize = 0;
 
-            while let Ok(_) = cancellation_rx.try_recv() {
+            loop {
+                match cancellation_rx.try_recv() {
+                    Ok(_) => (),
+                    Err(_) => break,
+                };
+
                 let fut = client.send(subject.clone(), proto::RequestKind::Probe);
                 let result = timeout(req_timeout, fut).await;
 
@@ -77,6 +82,6 @@ impl Monitor for PingPong {
                 delay_for(tick_delay).await;
             }
         }
-            .boxed()
+        .boxed()
     }
 }

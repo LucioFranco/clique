@@ -263,7 +263,7 @@ impl<M: Monitor> Membership<M> {
             // filter out messages which violate membership invariants
             // And then run the cut detector to see if there is a new proposal
             .filter_map(|message| {
-                if !self.filter_alert_messages(&msg_batch, message, size, current_config_id) {
+                if !self.filter_alert_messages(&msg_batch, message, size, &current_config_id) {
                     return None;
                 }
 
@@ -312,11 +312,11 @@ impl<M: Monitor> Membership<M> {
         _message_batch: &BatchedAlertMessage, // Might require this later for loggign
         message: &Alert,
         _size: usize,
-        config_id: ConfigId,
+        config_id: &ConfigId,
     ) -> bool {
         let dst = &message.dst;
 
-        if config_id != message.config_id {
+        if *config_id != message.config_id {
             return false;
         }
 
@@ -430,10 +430,12 @@ impl<M: Monitor> Membership<M> {
         for node in &proposal {
             if self.view.is_host_present(&node) {
                 self.view.ring_delete(&node)?;
-            } else if let Some((node_id, _metadata)) = self.joiner_data.remove(node) {
-                self.view.ring_add(node.clone(), node_id)?;
             } else {
-                panic!("Node not present in pre-join metadata")
+                if let Some((node_id, _metadata)) = self.joiner_data.remove(node) {
+                    self.view.ring_add(node.clone(), node_id)?;
+                } else {
+                    panic!("Node not present in pre-join metadata")
+                }
             }
         }
 

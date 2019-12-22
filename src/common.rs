@@ -21,7 +21,7 @@ pub enum SchedulerEvents {
 }
 
 /// Represents the NodeId internall it is just a Uuid v4
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
 pub struct NodeId(Uuid);
 
 impl NodeId {

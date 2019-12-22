@@ -163,7 +163,8 @@ impl FastPaxos {
         if self.votes_received.len() >= (self.size as f64 - f) as usize
             && *count >= (self.size as f64 - f) as usize
         {
-            return Ok(self.on_decide(request.endpoints.clone(), scheduler));
+            self.on_decide(request.endpoints.clone(), scheduler);
+            return Ok(());
         }
 
         Err(Error::fast_round_failure())

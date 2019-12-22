@@ -43,7 +43,7 @@ jobs:
           rust-version: stable
       - uses: actions/checkout@master
       - name: Install rustfmt
-        run: rustup component install rustfmt
+        run: rustup component add rustfmt
       - name: Check
         run: cargo fmt -- --check 
   # clippy-check:

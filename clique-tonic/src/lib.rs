@@ -10,7 +10,9 @@ pub mod membership {
 }
 
 mod server;
-pub mod transport;
+mod transport;
+
+pub use transport::TonicTransport;
 
 /// Simple macro to extract an optional field from proto buf messgae.
 /// Keep in mind, the field needs to impl From<T> for U where T is the

@@ -171,15 +171,10 @@ where
                         let task = self.handle_client(request);
                         self.scheduler.push(task);
                     },
-                    res = edge_failure_notifications_rx.recv().fuse() => {
-                        let (subject, config_id) = res.unwrap();
-                        // match res {
-                        //     Ok(Some((subject, config_id))) =>mem.edge_failure_notification(subject, config_id),
-                        //     Ok(None) => continue,
-                        //     Err(e) => todo!(),
-                        // }
-
-                    },
+                    // res = edge_failure_notifications_rx.recv().fuse() => {
+                    //     let (subject, config_id) = res.unwrap();
+                    //     mem.edge_failure_notification(subject, config_id);
+                    // },
                     _ = alert_batcher_interval.select_next_some() => {
                         if let Some(msg) = mem.get_batch_alerts() {
                             let req = proto::RequestKind::BatchedAlert(msg);

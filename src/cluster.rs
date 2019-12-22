@@ -306,7 +306,6 @@ where
         &mut self,
         join_res: proto::JoinResponse,
     ) -> Result<Vec<Result<Response>>> {
-
         let mut ring_num_per_obs = HashMap::new();
 
         let mut ring_num = 0;

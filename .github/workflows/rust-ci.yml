@@ -20,7 +20,6 @@ jobs:
         run: cargo check --all --examples --tests
   test-os:
     # Test against stable Rust across macOS, Windows, and Linux.
-    needs: check
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:

@@ -74,9 +74,9 @@ impl View {
     }
 
     /// Checks if a node with the accompanying `NodeId` is safe to add to the network.
-    pub fn is_safe_to_join(&self, node: &Endpoint, node_id: &NodeId) -> JoinStatus {
+    pub fn is_safe_to_join(&self, node: &str, node_id: &NodeId) -> JoinStatus {
         // TODO: what if host is not in the ring?
-        if self.rings[0].contains(node.clone()) {
+        if self.rings[0].contains(node.to_string()) {
             JoinStatus::HostnameAlreadyInRing
         } else if self.seen.contains(node_id) {
             JoinStatus::NodeIdAlreadyInRing
@@ -116,13 +116,13 @@ impl View {
     /// # Errors
     ///
     /// Returns `NodeNotInRing` if the node doesn't exist in the view already.
-    pub fn ring_delete(&mut self, node: &Endpoint) -> Result<()> {
-        if !self.rings[0].contains(node.clone()) {
+    pub fn ring_delete(&mut self, node: &str) -> Result<()> {
+        if !self.rings[0].contains(node.to_string()) {
             return Err(Error::new_node_not_in_ring());
         }
 
         for ring in &mut self.rings {
-            ring.remove(node.clone());
+            ring.remove(node.to_string());
         }
 
         self.should_update_configuration_id = true;
@@ -135,8 +135,8 @@ impl View {
     /// # Errors
     ///
     /// Returns `NodeNotInRing` if the provided node doesn't exist already.
-    pub fn get_observers(&self, node: &Endpoint) -> Result<Vec<Endpoint>> {
-        if !self.rings[0].contains(node.clone()) {
+    pub fn get_observers(&self, node: &str) -> Result<Vec<Endpoint>> {
+        if !self.rings[0].contains(node.to_string()) {
             return Err(Error::new_node_not_in_ring());
         }
 
@@ -147,7 +147,7 @@ impl View {
         let mut observers = Vec::new();
 
         for ring in &self.rings {
-            if let Some(successor) = ring.higher(node.clone()) {
+            if let Some(successor) = ring.higher(node.to_string()) {
                 observers.push(successor.clone());
             } else {
                 let first = ring.first().unwrap();
@@ -163,8 +163,8 @@ impl View {
     /// # Errors
     ///
     /// Returns `NodeNotInRing` if the provided node doesn't exist already.
-    pub fn get_subjects(&self, node: &Endpoint) -> Result<Vec<Endpoint>> {
-        if !self.rings[0].contains(node.clone()) {
+    pub fn get_subjects(&self, node: &str) -> Result<Vec<Endpoint>> {
+        if !self.rings[0].contains(node.to_string()) {
             return Err(Error::new_node_not_in_ring());
         }
 
@@ -177,7 +177,7 @@ impl View {
     }
 
     /// Get the observers that the node would have if it were in the view already.
-    pub fn get_expected_observers(&self, node: &Endpoint) -> Vec<Endpoint> {
+    pub fn get_expected_observers(&self, node: &str) -> Vec<Endpoint> {
         self.get_predecessors(node)
     }
 
@@ -186,11 +186,11 @@ impl View {
         self.rings.get(k as usize)
     }
 
-    pub fn get_ring_numbers(&self, observer: &Endpoint, subject: &Endpoint) -> Result<Vec<i32>> {
+    pub fn get_ring_numbers(&self, observer: &str, subject: &str) -> Result<Vec<i32>> {
         let subjects = self.get_subjects(observer)?;
         let mut ring_indexes = vec![];
 
-        if subjects.len() == 0 {
+        if subjects.is_empty() {
             return Ok(ring_indexes);
         }
 
@@ -236,11 +236,11 @@ impl View {
     }
 
     /// Check if the node is present.
-    pub fn is_host_present(&self, node: &Endpoint) -> bool {
-        self.rings[0].contains(node.clone())
+    pub fn is_host_present(&self, node: &str) -> bool {
+        self.rings[0].contains(node.to_string())
     }
 
-    fn get_predecessors(&self, node: &Endpoint) -> Vec<Endpoint> {
+    fn get_predecessors(&self, node: &str) -> Vec<Endpoint> {
         if self.rings[0].is_empty() {
             return Vec::new();
         }
@@ -248,7 +248,7 @@ impl View {
         let mut predecessors = Vec::new();
 
         for ring in &self.rings {
-            if let Some(predecessor) = ring.lower(node.clone()) {
+            if let Some(predecessor) = ring.lower(node.to_string()) {
                 predecessors.push(predecessor.clone());
             } else {
                 let last = ring.last().unwrap();
@@ -403,7 +403,7 @@ mod tests {
             assert_eq!(sub.len(), 2);
         }
 
-        view.ring_delete(&"B".into()).unwrap();
+        view.ring_delete(&"B").unwrap();
 
         let mut obs = view.get_observers(&"A".to_string()).unwrap();
         assert_eq!(obs.len(), K as usize);

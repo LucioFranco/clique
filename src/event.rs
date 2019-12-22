@@ -19,6 +19,12 @@ impl Event {
     }
 }
 
+impl Default for Event {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct NodeStatusChange {
     pub(crate) endpoint: Endpoint,

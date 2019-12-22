@@ -133,7 +133,9 @@ where
 
     pub async fn join(&mut self, seed_addr: Target) -> Result<()> {
         for _ in 0usize..10usize {
-            return self.join_attempt(seed_addr.into()).await;
+            if let Ok(()) = self.join_attempt(seed_addr.clone().into()).await {
+                return Ok(());
+            }
         }
 
         Err(Error::new_join_phase2())
@@ -306,16 +308,13 @@ where
         &mut self,
         join_res: proto::JoinResponse,
     ) -> Result<Vec<Result<Response>>> {
-
         let mut ring_num_per_obs = HashMap::new();
 
-        let mut ring_num = 0;
-        for obs in &join_res.endpoints {
+        for (ring_num, obs) in join_res.endpoints.iter().enumerate() {
             ring_num_per_obs
                 .entry(obs)
                 .or_insert_with(Vec::new)
-                .push(ring_num);
-            ring_num += 1;
+                .push(ring_num as i32);
         }
 
         let mut in_flight_futs = Vec::new();
@@ -353,8 +352,8 @@ where
         let node_ids = join_res.identifiers;
         let _metadata = join_res.cluster_metadata;
 
-        debug_assert!(endpoints.len() > 0);
-        debug_assert!(node_ids.len() > 0);
+        debug_assert!(!endpoints.is_empty());
+        debug_assert!(!node_ids.is_empty());
 
         let view = View::bootstrap(K as i32, node_ids, endpoints);
         let cut_detector = CutDetector::new(K, H, L);

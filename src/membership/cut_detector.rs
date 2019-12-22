@@ -4,7 +4,10 @@ use crate::{
     transport::proto::{Alert, EdgeStatus},
 };
 
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    convert::TryInto,
+};
 
 use tracing::Level;
 
@@ -152,10 +155,8 @@ impl CutDetector {
             };
 
             // Account for all edges between nodes that are past the low threshold
-            let mut ring_number = 0;
-
-            for observer in observers {
-                if self.proposal.contains(&observer) || self.pre_proposal.contains(&observer) {
+            for (ring_number, observer) in observers.iter().enumerate() {
+                if self.proposal.contains(&observer) || self.pre_proposal.contains(observer) {
                     // Implicit detection of edges between observer and node_in_flux
                     let edge_status = if view.is_host_present(&node_in_flux) {
                         EdgeStatus::Up
@@ -167,10 +168,9 @@ impl CutDetector {
                         observer.clone(),
                         node_in_flux.clone(),
                         edge_status,
-                        ring_number,
+                        ring_number.try_into().unwrap(),
                     ));
                 }
-                ring_number += 1;
             }
         }
 

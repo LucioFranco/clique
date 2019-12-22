@@ -8,16 +8,22 @@ pub struct Builder<T, Target> {
     target: Option<Target>,
 }
 
+impl<T, Target> Default for Builder<T, Target> {
+    fn default() -> Self {
+        Builder {
+            transport: None,
+            target: None,
+        }
+    }
+}
+
 impl<T, Target> Builder<T, Target>
 where
     T: Transport<Target> + Send,
     Target: Send + Clone + Into<String>,
 {
     pub fn new() -> Self {
-        Builder {
-            transport: None,
-            target: None,
-        }
+        Builder::default()
     }
 
     pub async fn finish(mut self) -> Cluster<T, Target> {

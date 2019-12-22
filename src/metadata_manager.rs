@@ -14,7 +14,7 @@ impl MetadataManager {
         }
     }
 
-    pub fn get(&mut self, key: &Endpoint) -> Option<&Metadata> {
+    pub fn get(&mut self, key: &str) -> Option<&Metadata> {
         // self.role_map.get(key).or(Some(Metadata::default()))
         self.role_map.get(key)
     }
@@ -25,7 +25,7 @@ impl MetadataManager {
         });
     }
 
-    pub fn remove_node(&mut self, node: &Endpoint) {
+    pub fn remove_node(&mut self, node: &str) {
         self.role_map.remove(node);
     }
 }

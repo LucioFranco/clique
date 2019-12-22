@@ -110,7 +110,7 @@ impl<M: Monitor> Membership<M> {
             .collect()
     }
 
-    pub async fn handle_message(
+    pub fn handle_message(
         &mut self,
         request: Request,
         response_tx: OutboundResponse,
@@ -121,14 +121,14 @@ impl<M: Monitor> Membership<M> {
 
         match kind {
             PreJoin(msg) => {
-                let res = self.handle_pre_join(msg).await;
+                let res = self.handle_pre_join(msg);
                 response_tx.send(res).unwrap();
             }
             Join(msg) => {
-                self.handle_join(msg, response_tx).await;
+                self.handle_join(msg, response_tx);
             }
             BatchedAlert(msg) => {
-                let res = self.handle_batched_alert_message(msg, scheduler).await;
+                let res = self.handle_batched_alert_message(msg, scheduler);
                 if let Err(_e) = res {
                     panic!("Wait this wasn't supposed to happen!");
                 }
@@ -137,19 +137,21 @@ impl<M: Monitor> Membership<M> {
                 response_tx.send(Ok(self.handle_probe_message())).unwrap();
             }
             Consensus(msg) => {
-                let res = self.paxos.handle_message(msg, scheduler).await;
-                if let Err(_e) = res {
-                    panic!("Wait this wasn't supposed to happen!");
-                }
+                // TODO: make paxos syncrhonous
+                // let res = self.paxos.handle_message(msg, scheduler);
+                // if let Err(_e) = res {
+                //     panic!("Wait this wasn't supposed to happen!");
+                // }
             }
         };
     }
 
-    pub async fn start_classic_round(&mut self) -> Result<()> {
-        self.paxos.start_classic_round().await
+    pub fn start_classic_round(&mut self) -> Result<()> {
+        // TODO: make paxos syncrhonous
+        // self.paxos.start_classic_round()
     }
 
-    pub async fn handle_pre_join(&mut self, msg: PreJoinMessage) -> Result<Response> {
+    pub fn handle_pre_join(&mut self, msg: PreJoinMessage) -> Result<Response> {
         let PreJoinMessage {
             sender, node_id, ..
         } = msg;
@@ -184,7 +186,7 @@ impl<M: Monitor> Membership<M> {
         Ok(Response::new_join(join_res))
     }
 
-    pub async fn handle_join(&mut self, msg: JoinMessage, response_tx: OutboundResponse) {
+    pub fn handle_join(&mut self, msg: JoinMessage, response_tx: OutboundResponse) {
         if msg.config_id == self.view.get_current_config_id() {
             let config = self.view.get_config();
 
@@ -250,7 +252,7 @@ impl<M: Monitor> Membership<M> {
     // return a valid proposal.
     //
     // Edge update messages that do not affect the ongoing proposal need to be dropped.
-    async fn handle_batched_alert_message(
+    fn handle_batched_alert_message(
         &mut self,
         msg_batch: BatchedAlertMessage,
         scheduler: &mut Scheduler,
@@ -283,7 +285,8 @@ impl<M: Monitor> Membership<M> {
                 ))
                 .expect("Unable to send response");
 
-            self.paxos.propose(proposal, scheduler).await?
+            // TODO: make paxos syncrhonous
+            // self.paxos.propose(proposal, scheduler).await?
         }
 
         Ok(())
@@ -421,7 +424,7 @@ impl<M: Monitor> Membership<M> {
     /// Any node that is not in the membership list will be added to the cluster,
     /// and any node that is currently in the membership list, but not in the proposal
     /// will be removed.
-    pub async fn on_decide(&mut self, proposal: Vec<Endpoint>) -> Result<()> {
+    pub fn on_decide(&mut self, proposal: Vec<Endpoint>) -> Result<()> {
         // TODO: Handle metadata updates
         // TODO: Handle subscriptions
 

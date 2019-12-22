@@ -345,7 +345,7 @@ impl From<proto::RequestKind> for membership::RapidRequest {
 }
 
 impl From<proto::PreJoinMessage> for membership::PreJoinMessage {
-    fn from(mut p: proto::PreJoinMessage) -> Self {
+    fn from(p: proto::PreJoinMessage) -> Self {
         membership::PreJoinMessage {
             sender: Some(p.sender.into()),
             node_id: Some(p.node_id.into()),

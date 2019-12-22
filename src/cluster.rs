@@ -143,7 +143,8 @@ where
 
     async fn run(&mut self) -> Result<()> {
         if let Some(mut mem) = self.membership.take() {
-            let mut edge_failure_notifications_rx =
+            // TODO: re-enable this
+            let mut _edge_failure_notifications_rx =
                 mem.create_failure_detectors(&mut self.scheduler, &self.client)?;
 
             let mut alert_batcher_interval = interval(Duration::from_millis(100)).fuse();

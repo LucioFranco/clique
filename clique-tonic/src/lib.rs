@@ -253,6 +253,7 @@ impl From<membership::Endpoint> for clique::Endpoint {
 
 impl From<membership::NodeId> for clique::NodeId {
     fn from(r: membership::NodeId) -> Self {
+        println!("uuid: {:?}", r.uuid);
         Uuid::parse_str(&r.uuid)
             .expect("Unable to parse UUID")
             .into()
@@ -349,7 +350,7 @@ impl From<proto::PreJoinMessage> for membership::PreJoinMessage {
             sender: Some(p.sender.into()),
             node_id: Some(p.node_id.into()),
             ring_number: p.ring_number,
-            configuration_id: p.config_id.take().unwrap(),
+            configuration_id: p.config_id.unwrap_or(-1),
         }
     }
 }
@@ -491,7 +492,7 @@ impl From<clique::Endpoint> for membership::Endpoint {
 impl From<clique::NodeId> for membership::NodeId {
     fn from(n: clique::NodeId) -> Self {
         membership::NodeId {
-            uuid: format!("{:?}", n),
+            uuid: n.to_string(),
         }
     }
 }

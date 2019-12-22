@@ -3,6 +3,11 @@ use structopt::StructOpt;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tracing_log::LogTracer::init()?;
+    tracing_subscriber::FmtSubscriber::builder()
+        .with_max_level(tracing_subscriber::filter::LevelFilter::DEBUG)
+        .init();
+
     let opts = Opts::from_args();
 
     let listen = match &opts {

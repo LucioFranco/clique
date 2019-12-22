@@ -32,6 +32,10 @@ impl NodeId {
     pub fn as_bytes(&self) -> &[u8] {
         self.0.as_bytes()
     }
+
+    pub fn to_string(&self) -> String {
+        self.0.to_hyphenated().to_string()
+    }
 }
 
 impl From<Uuid> for NodeId {

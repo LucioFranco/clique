@@ -21,7 +21,7 @@ where
     }
 
     pub async fn finish(mut self) -> Cluster<T, Target> {
-        let (event_tx, event_rx) = broadcast::channel(10);
+        let (event_tx, _event_rx) = broadcast::channel(10);
         let transport = self
             .transport
             .take()

@@ -6,6 +6,7 @@ pub struct MetadataManager {
     role_map: HashMap<Endpoint, Metadata>,
 }
 
+#[allow(dead_code)]
 impl MetadataManager {
     pub fn new() -> Self {
         MetadataManager {

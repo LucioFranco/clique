@@ -82,9 +82,11 @@ impl<M: Monitor> Membership<M> {
         }
     }
 
+    #[allow(dead_code)]
     fn send_initial_notification(&self) {
         self.event_tx
-            .send(Event::ViewChange(self.get_inititial_view_changes()));
+            .send(Event::ViewChange(self.get_inititial_view_changes()))
+            .expect("Unable to send response");
     }
 
     fn get_inititial_view_changes(&self) -> Vec<NodeStatusChange> {
@@ -233,7 +235,9 @@ impl<M: Monitor> Membership<M> {
                 }
             };
 
-            response_tx.send(Ok(Response::new(proto::ResponseKind::Join(response))));
+            response_tx
+                .send(Ok(Response::new(proto::ResponseKind::Join(response))))
+                .expect("Unable to send reseponse");
         }
     }
 
@@ -273,9 +277,11 @@ impl<M: Monitor> Membership<M> {
         if !proposal.is_empty() {
             self.announced_proposal = true;
 
-            self.event_tx.send(Event::ViewChangeProposal(
-                self.create_node_status_change_list(proposal.clone()),
-            ));
+            self.event_tx
+                .send(Event::ViewChangeProposal(
+                    self.create_node_status_change_list(proposal.clone()),
+                ))
+                .expect("Unable to send response");
 
             self.paxos.propose(proposal, scheduler).await?
         }
@@ -360,6 +366,7 @@ impl<M: Monitor> Membership<M> {
         Ok(rx)
     }
 
+    #[allow(dead_code)]
     pub fn edge_failure_notification(&mut self, subject: Endpoint, config_id: ConfigId) {
         if config_id != self.view.get_current_config_id() {
             // TODO: Figure out why &String does not impl Value
@@ -369,6 +376,7 @@ impl<M: Monitor> Membership<M> {
             //     config = self.view.get_current_config_id(),
             //     old_config = config_id
             // );
+            //
             return;
         }
 
@@ -378,7 +386,10 @@ impl<M: Monitor> Membership<M> {
             edge_status: proto::EdgeStatus::Down,
             config_id,
             node_id: None,
-            ring_number: self.view.get_ring_numbers(&self.host_addr, &subject),
+            ring_number: self
+                .view
+                .get_ring_numbers(&self.host_addr, &subject)
+                .expect("Unable to get ring number"),
             metadata: None,
         };
 

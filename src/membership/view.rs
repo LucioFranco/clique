@@ -186,8 +186,24 @@ impl View {
         self.rings.get(k as usize)
     }
 
-    pub fn get_ring_numbers(&self, observer: &Endpoint, subject: &Endpoint) -> Vec<i32> {
-        unimplemented!("Implement this idiot!")
+    pub fn get_ring_numbers(&self, observer: &Endpoint, subject: &Endpoint) -> Result<Vec<i32>> {
+        let subjects = self.get_subjects(observer)?;
+        let mut ring_indexes = vec![];
+
+        if subjects.len() == 0 {
+            return Ok(ring_indexes);
+        }
+
+        let mut ring_number = 0;
+        subjects.iter().for_each(|node| {
+            if node == subject {
+                ring_indexes.push(ring_number)
+            }
+
+            ring_number += 1;
+        });
+
+        Ok(ring_indexes)
     }
 
     /// Get the current configuration.

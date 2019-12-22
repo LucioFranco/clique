@@ -403,7 +403,7 @@ mod tests {
             assert_eq!(sub.len(), 2);
         }
 
-        view.ring_delete(&"B".into()).unwrap();
+        view.ring_delete(&"B").unwrap();
 
         let mut obs = view.get_observers(&"A".to_string()).unwrap();
         assert_eq!(obs.len(), K as usize);

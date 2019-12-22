@@ -5,7 +5,7 @@ use tonic::{transport::Server, Request, Response, Status};
 use clique::transport;
 
 use crate::membership::{
-    server::{Membership, MembershipServer},
+    membership_server::{Membership, MembershipServer},
     RapidRequest, RapidResponse,
 };
 
@@ -74,7 +74,8 @@ impl GrpcServer {
 
         let task = async move {
             Server::builder()
-                .serve(addr, MembershipServer::new(membership))
+                .add_service(MembershipServer::new(membership))
+                .serve(addr)
                 .await?;
 
             Ok(())

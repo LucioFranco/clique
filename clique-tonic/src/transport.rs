@@ -6,7 +6,7 @@ use tokio::sync::mpsc;
 use tonic::{transport::Channel, Request};
 
 use crate::{
-    membership::client::MembershipClient,
+    membership::membership_client::MembershipClient,
     server::{GrpcServer, TransportItem},
 };
 
@@ -27,13 +27,14 @@ where
 
     fn send(&mut self, req: transport::Request) -> Self::ClientFuture {
         let (target, kind) = req.into_parts();
-
-        let channel = Channel::from_shared(target.as_bytes()).unwrap().channel();
-        let mut client = MembershipClient::new(channel);
-
-        let req = Request::new(kind.into());
+        let channel = Channel::from_shared(target).unwrap();
 
         let task = async move {
+            let channel = channel.connect().await.unwrap();
+            let mut client = MembershipClient::new(channel);
+
+            let req = Request::new(kind.into());
+
             client
                 .send_request(req)
                 .await

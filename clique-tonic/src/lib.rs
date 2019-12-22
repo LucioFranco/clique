@@ -31,8 +31,9 @@ impl From<membership::RapidResponse> for Response {
             Content::JoinResponse(res) => Response::new_join(res.into()),
             Content::Response(_) => Response::empty(),
             Content::ConsensusResponse(_) => Response::consensus(),
-            Content::ProbeResponse(membership::ProbeResponse { status }) => {
-                Response::new_probe(status)
+            Content::ProbeResponse(membership::ProbeResponse { status: _ }) => {
+                todo!()
+                // Response::new_probe(status)
             }
         }
     }
@@ -267,8 +268,9 @@ impl From<Response> for membership::RapidResponse {
             ResponseKind::Join(m) => Content::JoinResponse(m.into()),
             ResponseKind::Response => Content::Response(membership::EmptyResponse {}),
             ResponseKind::Consensus => Content::ConsensusResponse(membership::ConsensusResponse {}),
-            ResponseKind::Probe(status) => {
-                Content::ProbeResponse(membership::ProbeResponse { status })
+            ResponseKind::Probe(_status) => {
+                todo!()
+                // Content::ProbeResponse(membership::ProbeResponse { status })
             }
         };
 

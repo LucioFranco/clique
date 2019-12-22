@@ -33,9 +33,13 @@ impl From<membership::RapidResponse> for Response {
             Content::JoinResponse(res) => Response::new_join(res.into()),
             Content::Response(_) => Response::empty(),
             Content::ConsensusResponse(_) => Response::consensus(),
-            Content::ProbeResponse(membership::ProbeResponse { status: _ }) => {
-                todo!()
-                // Response::new_probe(status)
+            Content::ProbeResponse(membership::ProbeResponse { status }) => {
+                let status = match status {
+                    0 => proto::NodeStatus::Up,
+                    1 => proto::NodeStatus::Bootstrapping,
+                    _ => unreachable!(),
+                };
+                Response::new_probe(status)
             }
         }
     }
@@ -253,7 +257,6 @@ impl From<membership::Endpoint> for clique::Endpoint {
 
 impl From<membership::NodeId> for clique::NodeId {
     fn from(r: membership::NodeId) -> Self {
-        println!("uuid: {:?}", r.uuid);
         Uuid::parse_str(&r.uuid)
             .expect("Unable to parse UUID")
             .into()
@@ -271,9 +274,13 @@ impl From<Response> for membership::RapidResponse {
             ResponseKind::Join(m) => Content::JoinResponse(m.into()),
             ResponseKind::Response => Content::Response(membership::EmptyResponse {}),
             ResponseKind::Consensus => Content::ConsensusResponse(membership::ConsensusResponse {}),
-            ResponseKind::Probe(_status) => {
-                todo!()
-                // Content::ProbeResponse(membership::ProbeResponse { status })
+            ResponseKind::Probe(status) => {
+                let status = match status {
+                    proto::NodeStatus::Up => 0,
+                    proto::NodeStatus::Bootstrapping => 1,
+                };
+
+                Content::ProbeResponse(membership::ProbeResponse { status })
             }
         };
 

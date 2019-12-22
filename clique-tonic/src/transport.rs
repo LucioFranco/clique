@@ -27,6 +27,8 @@ where
 
     fn send(&mut self, req: transport::Request) -> Self::ClientFuture {
         let (target, kind) = req.into_parts();
+
+        tracing::debug!(message = "sending.", %target, ?kind);
         let channel = Channel::from_shared(format!("http://{}", target)).unwrap();
 
         let task = async move {

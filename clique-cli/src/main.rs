@@ -5,7 +5,7 @@ use structopt::StructOpt;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_log::LogTracer::init()?;
     tracing_subscriber::FmtSubscriber::builder()
-        .with_max_level(tracing_subscriber::filter::LevelFilter::DEBUG)
+        .with_env_filter("clique=debug,clique_tonic=debug,clique_cli=debug")
         .init();
 
     let opts = Opts::from_args();

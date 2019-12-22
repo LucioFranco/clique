@@ -132,7 +132,8 @@ where
     }
 
     pub async fn join(&mut self, seed_addr: Target) -> Result<()> {
-        for _ in 0usize..10usize {
+        for i in 0usize..10usize {
+            tracing::debug!(message = "joining.", attempt = i);
             if let Ok(()) = self.join_attempt(seed_addr.clone().into()).await {
                 return Ok(());
             }
@@ -142,7 +143,9 @@ where
     }
 
     async fn run(&mut self) -> Result<()> {
-        if let Some(mut mem) = self.membership.take() {
+        if let Some(mem) = &mut self.membership {
+            tracing::debug!("running.");
+
             // TODO: re-enable this
             let mut _edge_failure_notifications_rx =
                 mem.create_failure_detectors(&mut self.scheduler, &self.client)?;

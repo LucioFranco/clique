@@ -25,6 +25,8 @@ impl Membership for GrpcServer {
         &self,
         req: Request<RapidRequest>,
     ) -> Result<Response<RapidResponse>, Status> {
+        tracing::debug!(message = "inbound request.", from = %req.remote_addr().unwrap(), message = ?req.get_ref());
+
         let (res_tx, res_rx) = oneshot::channel();
 
         self.req_tx
@@ -44,6 +46,8 @@ impl Membership for GrpcServer {
                 format!("Channel receive error: {:?}", e),
             )
         })?;
+
+        tracing::debug!(message = "sending response.", message = ?response);
 
         match response {
             Err(e) => {

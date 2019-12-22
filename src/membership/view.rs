@@ -163,8 +163,8 @@ impl View {
     /// # Errors
     ///
     /// Returns `NodeNotInRing` if the provided node doesn't exist already.
-    pub fn get_subjects(&self, node: &Endpoint) -> Result<Vec<Endpoint>> {
-        if !self.rings[0].contains(node.clone()) {
+    pub fn get_subjects(&self, node: &str) -> Result<Vec<Endpoint>> {
+        if !self.rings[0].contains(node.to_string()) {
             return Err(Error::new_node_not_in_ring());
         }
 
@@ -186,11 +186,11 @@ impl View {
         self.rings.get(k as usize)
     }
 
-    pub fn get_ring_numbers(&self, observer: &Endpoint, subject: &Endpoint) -> Result<Vec<i32>> {
+    pub fn get_ring_numbers(&self, observer: &str, subject: &str) -> Result<Vec<i32>> {
         let subjects = self.get_subjects(observer)?;
         let mut ring_indexes = vec![];
 
-        if subjects.len() == 0 {
+        if subjects.is_empty() {
             return Ok(ring_indexes);
         }
 
@@ -236,11 +236,11 @@ impl View {
     }
 
     /// Check if the node is present.
-    pub fn is_host_present(&self, node: &Endpoint) -> bool {
-        self.rings[0].contains(node.clone())
+    pub fn is_host_present(&self, node: &str) -> bool {
+        self.rings[0].contains(node.to_string())
     }
 
-    fn get_predecessors(&self, node: &Endpoint) -> Vec<Endpoint> {
+    fn get_predecessors(&self, node: &str) -> Vec<Endpoint> {
         if self.rings[0].is_empty() {
             return Vec::new();
         }
@@ -248,7 +248,7 @@ impl View {
         let mut predecessors = Vec::new();
 
         for ring in &self.rings {
-            if let Some(predecessor) = ring.lower(node.clone()) {
+            if let Some(predecessor) = ring.lower(node.to_string()) {
                 predecessors.push(predecessor.clone());
             } else {
                 let last = ring.last().unwrap();

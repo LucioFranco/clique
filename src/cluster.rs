@@ -133,7 +133,9 @@ where
 
     pub async fn join(&mut self, seed_addr: Target) -> Result<()> {
         for _ in 0usize..10usize {
-            return self.join_attempt(seed_addr.into()).await;
+            if let Ok(()) = self.join_attempt(seed_addr.clone().into()).await {
+                return Ok(());
+            }
         }
 
         Err(Error::new_join_phase2())
@@ -306,7 +308,6 @@ where
         &mut self,
         join_res: proto::JoinResponse,
     ) -> Result<Vec<Result<Response>>> {
-
         let mut ring_num_per_obs = HashMap::new();
 
         for (ring_num, obs) in join_res.endpoints.iter().enumerate() {

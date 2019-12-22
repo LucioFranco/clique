@@ -34,7 +34,6 @@ jobs:
       run: cargo test --all
   clippy:
     # Run clippy as a final test.
-    needs: [test-os]
     runs-on: [ubuntu-latest]
     steps:    
       - name: rust-clippy-check

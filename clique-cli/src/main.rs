@@ -22,10 +22,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .finish()
         .await;
 
-    match opts {
-        Opts::Start { .. } => cluster.start().await?,
-        Opts::Join { peer, .. } => cluster.join(peer).await?,
-    }
+    // match opts {
+    //     Opts::Start { .. } => cluster.start().await?,
+    //     Opts::Join { peer, .. } => cluster.join(peer).await?,
+    // }
 
     Ok(())
 }

@@ -54,32 +54,33 @@ impl<M: Monitor> Membership<M> {
         cut_detector: CutDetector,
         monitor: M,
         event_tx: broadcast::Sender<Event>,
-        client: &Client,
+        // client: &Client,
     ) -> Self {
         // TODO: setup startup tasks
 
-        let paxos = FastPaxos::new(
-            host_addr.clone(),
-            view.get_membership_size(),
-            client.clone(),
-            view.get_current_config_id(),
-        );
+        // let paxos = FastPaxos::new(
+        //     host_addr.clone(),
+        //     view.get_membership_size(),
+        //     client.clone(),
+        //     view.get_current_config_id(),
+        // );
 
-        Self {
-            host_addr,
-            view,
-            cut_detector,
-            monitor,
-            paxos,
-            alerts: VecDeque::default(),
-            last_enqueued_alert: Instant::now(),
-            joiners_to_respond: HashMap::default(),
-            batch_window: Duration::new(10, 0),
-            announced_proposal: false,
-            joiner_data: HashMap::default(),
-            monitor_cancellers: vec![],
-            event_tx,
-        }
+        // Self {
+        //     host_addr,
+        //     view,
+        //     cut_detector,
+        //     monitor,
+        //     paxos,
+        //     alerts: VecDeque::default(),
+        //     last_enqueued_alert: Instant::now(),
+        //     joiners_to_respond: HashMap::default(),
+        //     batch_window: Duration::new(10, 0),
+        //     announced_proposal: false,
+        //     joiner_data: HashMap::default(),
+        //     monitor_cancellers: vec![],
+        //     event_tx,
+        // }
+        todo!()
     }
 
     #[allow(dead_code)]
@@ -149,6 +150,7 @@ impl<M: Monitor> Membership<M> {
     pub fn start_classic_round(&mut self) -> Result<()> {
         // TODO: make paxos syncrhonous
         // self.paxos.start_classic_round()
+        todo!()
     }
 
     pub fn handle_pre_join(&mut self, msg: PreJoinMessage) -> Result<Response> {

@@ -12,6 +12,7 @@ mod common;
 mod consensus;
 mod error;
 mod event;
+mod join;
 mod membership;
 mod metadata_manager;
 mod monitor;

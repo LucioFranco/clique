@@ -1,4 +1,4 @@
-use crate::{cluster::Cluster, cluster::Inner, transport::Transport};
+use crate::{cluster::Cluster, transport::Transport};
 
 use tokio::sync::broadcast;
 
@@ -27,18 +27,19 @@ where
     }
 
     pub async fn finish(mut self) -> Cluster<T, Target> {
-        let (event_tx, _event_rx) = broadcast::channel(10);
-        let transport = self
-            .transport
-            .take()
-            .unwrap_or_else(|| panic!("Unable to get trasnport"));
-        let target = self
-            .target
-            .take()
-            .unwrap_or_else(|| panic!("Unable to get target"));
-        let inner = Inner::new(transport, target, event_tx.clone()).await;
+        // let (event_tx, _event_rx) = broadcast::channel(10);
+        // let transport = self
+        //     .transport
+        //     .take()
+        //     .unwrap_or_else(|| panic!("Unable to get trasnport"));
+        // let target = self
+        //     .target
+        //     .take()
+        //     .unwrap_or_else(|| panic!("Unable to get target"));
+        // let inner = Inner::new(transport, target, event_tx.clone()).await;
 
-        Cluster::new(event_tx, inner)
+        // Cluster::new(event_tx, inner)
+        todo!()
     }
 
     pub fn transport(mut self, transport: T) -> Self {

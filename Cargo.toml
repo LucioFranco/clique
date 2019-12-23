@@ -10,8 +10,8 @@ publish = false
 
 [workspace]
 members = [
-  "clique-tonic",
-  "clique-cli",
+  # "clique-tonic",
+  # "clique-cli",
   # "simulator",
   # "integ-tests"
 ]
@@ -28,6 +28,7 @@ tracing = { version = "0.1", features = ["async-await"] }
 tracing-futures = "0.2"
 tracing-attributes = "0.1"
 tracing-fmt = "0.1"
+async-trait = "0.1"
 
 [dev-dependencies]
 tokio = { version = "0.2.0", features = ["full"] }

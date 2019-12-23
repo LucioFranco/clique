@@ -4,7 +4,7 @@ use crate::{
     event::Event,
     membership::{cut_detector::CutDetector, view::View, Membership},
     monitor::ping_pong,
-    transport::{client, proto, Client, Request, Response, Transport},
+    transport::{client, proto, Client, Message, Request, Response, Transport2},
 };
 use futures::{
     future::{self, BoxFuture, FutureExt},
@@ -58,13 +58,10 @@ type Handle = broadcast::Receiver<Event>;
 //     }
 // }
 
-pub struct Cluster<T, Target>
-where
-    T: Transport<Target>,
-{
+pub struct Cluster<T> {
     membership: Membership<ping_pong::PingPong>,
     transport: T,
-    listen_target: Target,
+    listen_target: Endpoint,
     event_tx: broadcast::Sender<Event>,
     endpoint: Endpoint,
     node_id: NodeId,
@@ -74,15 +71,14 @@ where
     // server_stream: Fuse<T::ServerStream>,
 }
 
-impl<T, Target> Cluster<T, Target>
+impl<T> Cluster<T>
 where
-    T: Transport<Target> + Send,
-    Target: Into<Endpoint> + Send + Clone,
+    T: Transport2 + Send,
 {
     #![allow(dead_code)]
     pub(crate) async fn new(
         mut transport: T,
-        listen_target: Target,
+        listen_target: Endpoint,
         event_tx: broadcast::Sender<Event>,
     ) -> Self {
         // let server_stream = transport
@@ -116,9 +112,9 @@ where
         node_ids: Vec<NodeId>,
         endpoints: Vec<Endpoint>,
         transport: T,
-        listen_target: Target,
+        listen_target: Endpoint,
     ) -> Self {
-        let listen_addr = listen_target.clone().into();
+        let listen_addr = listen_target.clone();
         let (event_tx, event_rx) = broadcast::channel(1024);
 
         let view = View::bootstrap(K as i32, vec![node_id.clone()], vec![listen_addr.clone()]);
@@ -187,19 +183,28 @@ where
 
         let mut alert_batcher_interval = interval(Duration::from_millis(100)).fuse();
 
+        // let mut server_stream = self.transport.listen_
+
         loop {
             futures::select! {
-                // request = self.server_stream.select_next_some() => {
-                //     self.handle_server(request).await;
-                // },
+                res = self.transport.recv().fuse() => {
+                    match res {
+                        Ok((from, Message::Request(rk))) => {
+                            self.membership.step(from, rk);
+                        }
+                        _ => todo!("ooops")
+                    }
+
+                    // TODO: send out messages
+                },
                 event = self.scheduler.select_next_some() => {
                     match event {
                         SchedulerEvents::StartClassicRound => {
-                            self.membership.start_classic_round();
+                            self.membership.start_classic_round()?;
                             continue;
                         },
                         SchedulerEvents::Decision(proposal) => {
-                            self.membership.on_decide(proposal);
+                            self.membership.on_decide(proposal)?;
                             continue;
                         }
                         SchedulerEvents::None => continue,
@@ -224,51 +229,42 @@ where
         }
     }
 
-    async fn handle_server(
-        &mut self,
-        request: (Request, oneshot::Sender<crate::Result<Response>>),
-    ) {
-        let (request, response_tx) = request;
-        self.membership
-            .handle_message(request, response_tx, &mut self.scheduler);
-    }
-
     // Need this to be a boxed futures since we want to send these tasks into
     // the FuturesUnordered and we require that the lifetime of the future
     // is static due to the box. It seems that the compiler can't infer the
     // lifetime from the borrow that is calling handle_client if it were an
     // async fn.
-    fn handle_client(
-        &mut self,
-        request: client::RequestType,
-    ) -> BoxFuture<'static, SchedulerEvents> {
-        use client::RequestType::*;
+    // fn handle_client(
+    //     &mut self,
+    //     request: client::RequestType,
+    // ) -> BoxFuture<'static, SchedulerEvents> {
+    //     use client::RequestType::*;
 
-        match request {
-            Unary(request, tx) => {
-                let task = self
-                    .transport
-                    .send(request)
-                    .map(|res| tx.send(res.map_err(|_| Error::new_broken_pipe(None))))
-                    .map(|_| SchedulerEvents::None);
+    //     match request {
+    //         Unary(request, tx) => {
+    //             let task = self
+    //                 .transport
+    //                 .send(request)
+    //                 .map(|res| tx.send(res.map_err(|_| Error::new_broken_pipe(None))))
+    //                 .map(|_| SchedulerEvents::None);
 
-                Box::pin(task)
-            }
-            Broadcast(request) => {
-                // get all the members in the current config
-                let view = self.membership.view();
+    //             Box::pin(task)
+    //         }
+    //         Broadcast(request) => {
+    //             // get all the members in the current config
+    //             let view = self.membership.view();
 
-                let mut tasks = Vec::new();
-                for endpoint in view {
-                    let task = self
-                        .transport
-                        .send(Request::new(endpoint.clone(), request.clone()));
+    //             let mut tasks = Vec::new();
+    //             for endpoint in view {
+    //                 let task = self
+    //                     .transport
+    //                     .send(Request::new(endpoint.clone(), request.clone()));
 
-                    tasks.push(task);
-                }
+    //                 tasks.push(task);
+    //             }
 
-                Box::pin(future::join_all(tasks).map(|_| SchedulerEvents::None))
-            }
-        }
-    }
+    //             Box::pin(future::join_all(tasks).map(|_| SchedulerEvents::None))
+    //         }
+    //     }
+    // }
 }

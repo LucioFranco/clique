@@ -37,11 +37,15 @@ pub trait Transport2 {
 pub enum Message {
     Request(proto::RequestKind),
     Response(proto::ResponseKind),
+    Boradcast(proto::RequestKind),
 }
 
 impl From<proto::RequestKind> for Message {
     fn from(t: proto::RequestKind) -> Self {
-        Message::Request(t)
+        match t {
+            val @ proto::RequestKind::Consensus(_) => Message::Boradcast(val),
+            _ => Message::Request(t),
+        }
     }
 }
 

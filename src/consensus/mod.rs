@@ -5,13 +5,13 @@ use crate::{
     error::{Error, Result},
     transport::{
         proto::{self, Consensus, Consensus::*},
-        Client,
+        Client, Message,
     },
 };
 use futures::FutureExt;
 use rand::Rng;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     sync::atomic::{AtomicBool, Ordering},
     time::Duration,
 };
@@ -31,8 +31,8 @@ const BASE_DELAY: u64 = 1000;
 /// scheduled to be run after a random interval of time. The randomness is introduced so that
 /// multiple nodes do not start their own instances of paxos as coordinators.
 #[derive(Debug)]
-pub struct FastPaxos {
-    client: Client,
+pub struct FastPaxos<'mem> {
+    // client: Client,
     my_addr: Endpoint,
     size: usize,
     decided: AtomicBool,
@@ -41,23 +41,25 @@ pub struct FastPaxos {
     votes_received: HashSet<Endpoint>, // should be a bitset?
     votes_per_proposal: HashMap<Vec<Endpoint>, usize>,
     cancel_tx: Option<oneshot::Sender<()>>,
+
+    messages: VecDeque<Message>,
 }
 
 impl FastPaxos {
     #[allow(dead_code)]
-    pub fn new(my_addr: Endpoint, size: usize, client: Client, config_id: ConfigId) -> FastPaxos {
-        FastPaxos {
-            client: client.clone(),
-            config_id,
-            size,
-            my_addr: my_addr.clone(),
-            decided: AtomicBool::new(false),
-            paxos: Paxos::new(client, size, my_addr, config_id),
-            votes_received: HashSet::default(),
-            votes_per_proposal: HashMap::default(),
-            cancel_tx: None,
-        }
-    }
+    // pub fn new(my_addr: Endpoint, size: usize, client: Client, config_id: ConfigId) -> FastPaxos {
+    //     FastPaxos {
+    //         client: client.clone(),
+    //         config_id,
+    //         size,
+    //         my_addr: my_addr.clone(),
+    //         decided: AtomicBool::new(false),
+    //         paxos: Paxos::new(client, size, my_addr, config_id),
+    //         votes_received: HashSet::default(),
+    //         votes_per_proposal: HashMap::default(),
+    //         cancel_tx: None,
+    //     }
+    // }
 
     /// Propose a new membership set to the cluster
     ///
@@ -65,11 +67,7 @@ impl FastPaxos {
     ///
     /// Returns `NewBrokenPipe` if the broadcast was not sucessful
     #[allow(dead_code)]
-    pub async fn propose(
-        &mut self,
-        proposal: Vec<Endpoint>,
-        scheduler: &mut Scheduler,
-    ) -> Result<()> {
+    pub fn propose(&mut self, proposal: Vec<Endpoint>, scheduler: &mut Scheduler) {
         let mut paxos_delay = delay_for(self.get_random_delay()).fuse();
 
         let (tx, cancel_rx) = oneshot::channel();
@@ -98,9 +96,7 @@ impl FastPaxos {
             },
         ));
 
-        self.client.broadcast(kind).await?;
-
-        Ok(())
+        self.messages.push_back(kind.into());
     }
 
     /// Handles a consensus message which the membership service reveives.
@@ -114,30 +110,39 @@ impl FastPaxos {
     /// * `AlreadyReachedConsensus`: If this is called after the cluster has already reached
     /// consensus.
     /// * `FastRoundFailure`: If fast paxos is unable to reach consensus
-    pub async fn handle_message(
-        &mut self,
-        msg: Consensus,
-        scheduler: &mut Scheduler,
-    ) -> Result<()> {
+    // pub async fn handle_message(
+    //     &mut self,
+    //     msg: Consensus,
+    //     scheduler: &mut Scheduler,
+    // ) -> Result<()> {
+    //     match msg {
+    //         FastRoundPhase2bMessage(req) => self.handle_fast_round(&req, scheduler).await?,
+    //         Phase1aMessage(req) => self.paxos.handle_phase_1a(req).await?,
+    //         Phase1bMessage(req) => self.paxos.handle_phase_1b(req).await?,
+    //         Phase2aMessage(req) => self.paxos.handle_phase_2a(req).await?,
+    //         Phase2bMessage(req) => {
+    //             let proposal = self.paxos.handle_phase_2b(req).await?;
+    //             self.on_decide(proposal, scheduler);
+    //         }
+    //     };
+
+    //     Ok(())
+    // }
+
+    pub fn step(&mut self, msg: Consensus) -> Result<()> {
         match msg {
-            FastRoundPhase2bMessage(req) => self.handle_fast_round(&req, scheduler).await?,
-            Phase1aMessage(req) => self.paxos.handle_phase_1a(req).await?,
-            Phase1bMessage(req) => self.paxos.handle_phase_1b(req).await?,
-            Phase2aMessage(req) => self.paxos.handle_phase_2a(req).await?,
+            FastRoundPhase2bMessage(req) => self.handle_fast_round(&req).await?,
+            Phase1aMessage(req) => self.paxos.handle_phase_1a(req),
+            Phase1bMessage(req) => self.paxos.handle_phase_1b(req),
+            Phase2aMessage(req) => self.paxos.handle_phase_2a(req),
             Phase2bMessage(req) => {
-                let proposal = self.paxos.handle_phase_2b(req).await?;
+                let proposal = self.paxos.handle_phase_2b(req);
                 self.on_decide(proposal, scheduler);
             }
         };
-
-        Ok(())
     }
 
-    async fn handle_fast_round(
-        &mut self,
-        request: &proto::FastRoundPhase2bMessage,
-        scheduler: &mut Scheduler,
-    ) -> crate::Result<()> {
+    fn handle_fast_round(&mut self, request: &proto::FastRoundPhase2bMessage) -> crate::Result<()> {
         if request.config_id != self.config_id {
             return Err(Error::new_unexpected_request(None));
         }
@@ -163,33 +168,32 @@ impl FastPaxos {
         if self.votes_received.len() >= (self.size as f64 - f) as usize
             && *count >= (self.size as f64 - f) as usize
         {
-            self.on_decide(request.endpoints.clone(), scheduler);
+            // self.on_decide(request.endpoints.clone(), scheduler);
             return Ok(());
         }
 
         Err(Error::fast_round_failure())
     }
 
-    fn on_decide(&mut self, proposal: Vec<Endpoint>, scheduler: &mut Scheduler) {
-        // This is the only place where the value is set to `true`.
-        self.decided.store(true, Ordering::SeqCst);
+    // fn on_decide(&mut self, proposal: Vec<Endpoint>, scheduler: &mut Scheduler) {
+    //     // This is the only place where the value is set to `true`.
+    //     self.decided.store(true, Ordering::SeqCst);
 
-        // Cancel the schduled paxos round 1a
-        if let Some(cancel_tx) = self.cancel_tx.take() {
-            cancel_tx.send(()).unwrap();
-        }
+    //     // Cancel the schduled paxos round 1a
+    //     if let Some(cancel_tx) = self.cancel_tx.take() {
+    //         cancel_tx.send(()).unwrap();
+    //     }
 
-        let task = async move { SchedulerEvents::Decision(proposal) };
+    //     let task = async move { SchedulerEvents::Decision(proposal) };
 
-        scheduler.push(Box::pin(task));
-    }
+    //     scheduler.push(Box::pin(task));
+    // }
 
-    pub async fn start_classic_round(&mut self) -> Result<()> {
+    pub fn start_classic_round(&mut self) {
         if !self.decided.load(Ordering::SeqCst) {
             // The java impl does this..
-            self.paxos.start_phase_1a(2).await?;
+            self.paxos.start_phase_1a(2);
         }
-        Ok(())
     }
 
     fn get_random_delay(&self) -> Duration {

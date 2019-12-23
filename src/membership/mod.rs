@@ -510,4 +510,14 @@ impl<M: Monitor> Membership<M> {
             // });
         }
     }
+
+    pub fn drain_messages(&mut self) -> Vec<(Endpoint, Message)> {
+        let mut msgs = Vec::new();
+
+        while let Some(msg) = self.messages.pop_front() {
+            msgs.push(msg);
+        }
+
+        msgs
+    }
 }

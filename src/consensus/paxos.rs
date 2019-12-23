@@ -6,7 +6,7 @@ use crate::{
             Consensus, Phase1aMessage, Phase1bMessage, Phase2aMessage, Phase2bMessage, Rank,
             RequestKind,
         },
-        Client, Message,
+        Message,
     },
 };
 use std::{
@@ -44,33 +44,33 @@ pub struct Paxos {
 }
 
 impl Paxos {
-    #[allow(dead_code)]
-    // pub fn new(client: Client, size: usize, my_addr: Endpoint, config_id: ConfigId) -> Paxos {
-    //     Paxos {
-    //         client,
-    //         size,
-    //         my_addr,
-    //         config_id,
-    //         crnd: Rank {
-    //             round: 0,
-    //             node_index: 0,
-    //         },
-    //         rnd: Rank {
-    //             round: 0,
-    //             node_index: 0,
-    //         },
-    //         vrnd: Rank {
-    //             round: 0,
-    //             node_index: 0,
-    //         },
-    //         cval: Vec::new(),
-    //         vval: Vec::new(),
-    //         phase_1b_messages: Vec::new(),
-    //         phase_2a_messages: Vec::new(),
-    //         accept_responses: HashMap::new(),
-    //         decided: false,
-    //     }
-    // }
+    pub fn new(size: usize, my_addr: Endpoint, config_id: ConfigId) -> Paxos {
+        Paxos {
+            size,
+            my_addr,
+            config_id,
+            crnd: Rank {
+                round: 0,
+                node_index: 0,
+            },
+            rnd: Rank {
+                round: 0,
+                node_index: 0,
+            },
+            vrnd: Rank {
+                round: 0,
+                node_index: 0,
+            },
+            cval: Vec::new(),
+            vval: Vec::new(),
+            phase_1b_messages: Vec::new(),
+            phase_2a_messages: Vec::new(),
+            accept_responses: HashMap::new(),
+            decided: false,
+
+            messages: VecDeque::new(),
+        }
+    }
 
     /// Starts a classic paxos round by senidng out a Phase 1a message as the coordinator
     ///
@@ -79,7 +79,7 @@ impl Paxos {
     pub fn start_phase_1a(&mut self, round: u32) {
         if self.crnd.round > round {
             // TODO: handle these () returns
-            return Ok(());
+            return;
         }
 
         let mut hasher = XxHash32::with_seed(0);
@@ -114,14 +114,15 @@ impl Paxos {
         } = request;
 
         if config_id != self.config_id {
-            return Err(Error::new_unexpected_request(None));
+            // TODO: add logging here
+            return;
         }
 
         if self.crnd < rank {
             self.crnd = rank;
         } else {
             // TODO: new error type for rejecting message due to lower rank
-            return Err(Error::new_unexpected_request(None));
+            return;
         }
 
         let kind = RequestKind::Consensus(Consensus::Phase1bMessage(Phase1bMessage {
@@ -144,12 +145,12 @@ impl Paxos {
         let Phase1bMessage { config_id, rnd, .. } = request;
 
         if config_id != self.config_id {
-            return Err(Error::new_unexpected_request(None));
+            return;
         }
 
         // Only handle responses where crnd == i
         if rnd != self.crnd {
-            return Err(Error::new_unexpected_request(None));
+            return;
         }
 
         self.phase_1b_messages.push(message.clone());
@@ -165,7 +166,7 @@ impl Paxos {
                     vval: chosen_proposal,
                 }));
 
-                self.messages.push_back(kind.into());
+                self.messages.push_back((None, kind.into()));
             }
         }
     }
@@ -177,11 +178,11 @@ impl Paxos {
             config_id,
             rnd,
             vval,
-            ..
+            sender,
         } = request;
 
         if config_id != self.config_id {
-            return Err(Error::new_unexpected_request(None));
+            return;
         }
 
         if self.rnd <= rnd && self.vrnd != rnd {
@@ -196,10 +197,8 @@ impl Paxos {
                 endpoints: vval,
             }));
 
-            self.messages.push_back(kind.into());
+            self.messages.push_back((sender.into(), kind.into()));
         }
-
-        Ok(())
     }
 
     #[allow(dead_code)]
@@ -212,7 +211,7 @@ impl Paxos {
         } = request;
 
         if config_id != self.config_id {
-            return Err(Error::new_unexpected_request(None));
+            return;
         }
 
         let phase_2b_messages_in_rnd = self
@@ -225,10 +224,8 @@ impl Paxos {
             // TODO: let caller know of decision
             self.decided = true;
 
-            return Ok(decision);
+            // TODO: propogate decision
         }
-
-        Err(Error::new_unable_to_reach_decision())
     }
 }
 

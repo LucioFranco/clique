@@ -2,6 +2,7 @@
 // #![deny(missing_docs, missing_debug_implementations, rust_2018_idioms)]
 // #![cfg_attr(test, deny(warnings))]
 // #![doc(test(no_crate_inject, attr(deny(rust_2018_idioms))))]
+#![allow(warnings)]
 
 //! Clique membership library.
 
@@ -25,4 +26,4 @@ pub use self::cluster::Cluster;
 pub use self::common::{Endpoint, NodeId};
 pub use self::error::{Error, Result};
 pub use self::event::Event;
-pub use self::transport::Transport;
+pub use self::transport::{Message, Transport, Transport2};

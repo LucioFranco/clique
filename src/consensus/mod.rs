@@ -5,13 +5,13 @@ use crate::{
     error::{Error, Result},
     transport::{
         proto::{self, Consensus, Consensus::*},
-        Client,
+        Client, Message,
     },
 };
 use futures::FutureExt;
 use rand::Rng;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     sync::atomic::{AtomicBool, Ordering},
     time::Duration,
 };
@@ -31,8 +31,8 @@ const BASE_DELAY: u64 = 1000;
 /// scheduled to be run after a random interval of time. The randomness is introduced so that
 /// multiple nodes do not start their own instances of paxos as coordinators.
 #[derive(Debug)]
-pub struct FastPaxos {
-    client: Client,
+pub struct FastPaxos<'mem> {
+    // client: Client,
     my_addr: Endpoint,
     size: usize,
     decided: AtomicBool,
@@ -41,23 +41,25 @@ pub struct FastPaxos {
     votes_received: HashSet<Endpoint>, // should be a bitset?
     votes_per_proposal: HashMap<Vec<Endpoint>, usize>,
     cancel_tx: Option<oneshot::Sender<()>>,
+
+    messages: VecDeque<Message>,
 }
 
 impl FastPaxos {
     #[allow(dead_code)]
-    pub fn new(my_addr: Endpoint, size: usize, client: Client, config_id: ConfigId) -> FastPaxos {
-        FastPaxos {
-            client: client.clone(),
-            config_id,
-            size,
-            my_addr: my_addr.clone(),
-            decided: AtomicBool::new(false),
-            paxos: Paxos::new(client, size, my_addr, config_id),
-            votes_received: HashSet::default(),
-            votes_per_proposal: HashMap::default(),
-            cancel_tx: None,
-        }
-    }
+    // pub fn new(my_addr: Endpoint, size: usize, client: Client, config_id: ConfigId) -> FastPaxos {
+    //     FastPaxos {
+    //         client: client.clone(),
+    //         config_id,
+    //         size,
+    //         my_addr: my_addr.clone(),
+    //         decided: AtomicBool::new(false),
+    //         paxos: Paxos::new(client, size, my_addr, config_id),
+    //         votes_received: HashSet::default(),
+    //         votes_per_proposal: HashMap::default(),
+    //         cancel_tx: None,
+    //     }
+    // }
 
     /// Propose a new membership set to the cluster
     ///
@@ -65,11 +67,7 @@ impl FastPaxos {
     ///
     /// Returns `NewBrokenPipe` if the broadcast was not sucessful
     #[allow(dead_code)]
-    pub async fn propose(
-        &mut self,
-        proposal: Vec<Endpoint>,
-        scheduler: &mut Scheduler,
-    ) -> Result<()> {
+    pub fn propose(&mut self, proposal: Vec<Endpoint>, scheduler: &mut Scheduler) {
         let mut paxos_delay = delay_for(self.get_random_delay()).fuse();
 
         let (tx, cancel_rx) = oneshot::channel();
@@ -98,9 +96,7 @@ impl FastPaxos {
             },
         ));
 
-        self.client.broadcast(kind).await?;
-
-        Ok(())
+        self.messages.push_back(kind.into());
     }
 
     /// Handles a consensus message which the membership service reveives.

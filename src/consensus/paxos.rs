@@ -6,12 +6,12 @@ use crate::{
             Consensus, Phase1aMessage, Phase1bMessage, Phase2aMessage, Phase2bMessage, Rank,
             RequestKind,
         },
-        Client,
+        Client, Message,
     },
 };
 use std::{
     cmp::Ordering,
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     convert::TryInto,
     hash::Hasher,
 };
@@ -20,7 +20,7 @@ use twox_hash::XxHash32;
 #[derive(Debug)]
 pub struct Paxos {
     // TODO: come up with a design for onDecide
-    client: Client,
+    // client: Client,
     size: usize,
     my_addr: Endpoint,
     /// Highest-numbered round we have participated in
@@ -39,42 +39,44 @@ pub struct Paxos {
     phase_2a_messages: Vec<Phase2aMessage>,
     accept_responses: HashMap<Rank, HashMap<Endpoint, Phase2bMessage>>,
     decided: bool,
+
+    messages: VecDeque<(Option<Endpoint>, Message)>,
 }
 
 impl Paxos {
     #[allow(dead_code)]
-    pub fn new(client: Client, size: usize, my_addr: Endpoint, config_id: ConfigId) -> Paxos {
-        Paxos {
-            client,
-            size,
-            my_addr,
-            config_id,
-            crnd: Rank {
-                round: 0,
-                node_index: 0,
-            },
-            rnd: Rank {
-                round: 0,
-                node_index: 0,
-            },
-            vrnd: Rank {
-                round: 0,
-                node_index: 0,
-            },
-            cval: Vec::new(),
-            vval: Vec::new(),
-            phase_1b_messages: Vec::new(),
-            phase_2a_messages: Vec::new(),
-            accept_responses: HashMap::new(),
-            decided: false,
-        }
-    }
+    // pub fn new(client: Client, size: usize, my_addr: Endpoint, config_id: ConfigId) -> Paxos {
+    //     Paxos {
+    //         client,
+    //         size,
+    //         my_addr,
+    //         config_id,
+    //         crnd: Rank {
+    //             round: 0,
+    //             node_index: 0,
+    //         },
+    //         rnd: Rank {
+    //             round: 0,
+    //             node_index: 0,
+    //         },
+    //         vrnd: Rank {
+    //             round: 0,
+    //             node_index: 0,
+    //         },
+    //         cval: Vec::new(),
+    //         vval: Vec::new(),
+    //         phase_1b_messages: Vec::new(),
+    //         phase_2a_messages: Vec::new(),
+    //         accept_responses: HashMap::new(),
+    //         decided: false,
+    //     }
+    // }
 
     /// Starts a classic paxos round by senidng out a Phase 1a message as the coordinator
     ///
     /// Using ranks as round numbers ensure uniquenes even with multiple rounds happening at the
     /// same time.
-    pub async fn start_phase_1a(&mut self, round: u32) -> Result<()> {
+    pub fn start_phase_1a(&mut self, round: u32) {
         if self.crnd.round > round {
             // TODO: handle these () returns
             return Ok(());
@@ -97,16 +99,14 @@ impl Paxos {
             rank: self.crnd,
         }));
 
-        self.client.broadcast(kind).await?;
-
-        Ok(())
+        self.messages.push_back((None, kind.into()));
     }
 
     /// At acceptor, handle a Phase 1a message from a coordinator.
     ///
     /// If `crnd` > then we don't respond back.
     #[allow(dead_code)]
-    pub(crate) async fn handle_phase_1a(&mut self, request: Phase1aMessage) -> crate::Result<()> {
+    pub(crate) fn handle_phase_1a(&mut self, request: Phase1aMessage) {
         let Phase1aMessage {
             sender,
             config_id,
@@ -132,15 +132,13 @@ impl Paxos {
             vval: self.vval.clone(),
         }));
 
-        self.client.send_no_wait(sender, kind).await?;
-
-        Ok(())
+        self.messages.push_back((Some(sender), kind.into()));
     }
 
     /// At coordinator, coolect phase 1b messages from acceptors and check if they have already
     /// voted and if a value might have already been chosen
     #[allow(dead_code)]
-    pub(crate) async fn handle_phase_1b(&mut self, request: Phase1bMessage) -> crate::Result<()> {
+    pub(crate) fn handle_phase_1b(&mut self, request: Phase1bMessage) {
         let message = request.clone();
 
         let Phase1bMessage { config_id, rnd, .. } = request;
@@ -167,16 +165,14 @@ impl Paxos {
                     vval: chosen_proposal,
                 }));
 
-                self.client.broadcast(kind).await?;
+                self.messages.push_back(kind.into());
             }
         }
-
-        Ok(())
     }
 
     /// At acceptor, accept a phase 2a message.
     #[allow(dead_code)]
-    pub(crate) async fn handle_phase_2a(&mut self, request: Phase2aMessage) -> crate::Result<()> {
+    pub(crate) fn handle_phase_2a(&mut self, request: Phase2aMessage) {
         let Phase2aMessage {
             config_id,
             rnd,
@@ -200,17 +196,14 @@ impl Paxos {
                 endpoints: vval,
             }));
 
-            self.client.broadcast(kind).await?;
+            self.messages.push_back(kind.into());
         }
 
         Ok(())
     }
 
     #[allow(dead_code)]
-    pub(crate) async fn handle_phase_2b(
-        &mut self,
-        request: Phase2bMessage,
-    ) -> crate::Result<Vec<Endpoint>> {
+    pub(crate) fn handle_phase_2b(&mut self, request: Phase2bMessage) {
         let Phase2bMessage {
             config_id,
             rnd,

@@ -2,9 +2,8 @@ use crate::{
     cluster::Cluster,
     common::{Endpoint, NodeId},
     error::{Error, Result},
-    transport::{proto, Request, Response, Transport},
+    transport::{proto, Message, Transport2},
 };
-use futures::future;
 use std::collections::HashMap;
 
 pub struct Join<T, Target> {
@@ -16,10 +15,10 @@ pub struct Join<T, Target> {
 
 impl<T, Target> Join<T, Target>
 where
-    T: Transport<Target> + Send,
+    T: Transport2 + Send,
     Target: Into<Endpoint> + Send + Clone,
 {
-    async fn join_attempt(&mut self, seed_addr: Endpoint) -> Result<Cluster<T, Target>> {
+    async fn join_attempt(&mut self, seed_addr: Endpoint) -> Result<Cluster<T>> {
         let req = proto::RequestKind::PreJoin(proto::PreJoinMessage {
             sender: self.endpoint.clone(),
             node_id: self.node_id.clone(),
@@ -27,14 +26,19 @@ where
             config_id: None,
         });
 
+        self.transport
+            .send_to(seed_addr.into(), req.into())
+            .await
+            .map_err(|e| Error::new_broken_pipe(Some(e.into())))?;
+
         let join_res = match self
             .transport
-            .send(Request::new(seed_addr, req))
+            .recv()
             .await
-            .map_err(|e| Error::new_broken_pipe(Some(Box::new(e))))?
-            .into_inner()
+            .map_err(|e| Error::new_broken_pipe(Some(e.into())))?
         {
-            proto::ResponseKind::Join(res) => res,
+            // TODO: check if this is coming from the correct seed_addr
+            (_, Message::Response(proto::ResponseKind::Join(res))) => res,
             _ => return Err(Error::new_join_phase1()),
         };
 
@@ -50,35 +54,15 @@ where
             join_res.config_id
         };
 
-        let res = self
-            .send_join_phase2(join_res)
-            // TODO: probably want to make this a stream
-            .await?
-            .into_iter()
-            .filter_map(Result::ok)
-            .filter_map(|r| {
-                if let proto::ResponseKind::Join(res) = r.into_inner() {
-                    Some(res)
-                } else {
-                    None
-                }
-            })
-            .filter(|r| r.status == proto::JoinStatus::SafeToJoin)
-            .filter(|r| r.config_id != config_to_join)
-            .take(1)
-            .next();
+        let res = self.send_join_phase2(join_res).await?;
 
-        if let Some(join) = res {
-            Cluster::from_join(self.listen_target.clone().into(), join)
-        } else {
-            Err(Error::new_join_phase2())
-        }
+        Cluster::from_join(self.listen_target.clone().into(), res)
     }
 
     async fn send_join_phase2(
         &mut self,
         join_res: proto::JoinResponse,
-    ) -> Result<Vec<Result<Response>>> {
+    ) -> Result<proto::JoinResponse> {
         let mut ring_num_per_obs = HashMap::new();
 
         for (ring_num, obs) in join_res.endpoints.iter().enumerate() {
@@ -87,8 +71,6 @@ where
                 .or_insert_with(Vec::new)
                 .push(ring_num as i32);
         }
-
-        let mut in_flight_futs = Vec::new();
 
         for (endpoint, ring_nums) in ring_num_per_obs {
             let join = proto::RequestKind::Join(proto::JoinMessage {
@@ -100,19 +82,25 @@ where
                 metadata: None,
             });
 
-            let fut = self.transport.send(Request::new(endpoint.clone(), join));
-            in_flight_futs.push(fut);
+            self.transport
+                .send_to(endpoint.clone(), join.into())
+                .await
+                .map_err(Into::into)
+                .unwrap();
         }
 
-        let responses = future::join_all(in_flight_futs)
-            .await
-            .into_iter()
-            .map(|r| match r {
-                Ok(r) => Ok(r),
-                Err(e) => Err(Error::new_broken_pipe(Some(Box::new(e)))),
-            })
-            .collect();
+        loop {
+            let (from, msg) = self.transport.recv().await.map_err(Into::into).unwrap();
 
-        Ok(responses)
+            if let Message::Response(proto::ResponseKind::Join(join)) = msg {
+                if join.status == proto::JoinStatus::SafeToJoin
+                    && join.config_id != join_res.config_id
+                {
+                    continue;
+                }
+
+                return Ok(join);
+            }
+        }
     }
 }

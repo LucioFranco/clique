@@ -13,7 +13,7 @@ use crate::{
             self, Alert, BatchedAlertMessage, EdgeStatus, JoinMessage, JoinResponse, JoinStatus,
             Metadata, NodeStatus, PreJoinMessage,
         },
-        Client, Request, Response,
+        Client, Message, Request, Response,
     },
 };
 use cut_detector::CutDetector;
@@ -37,13 +37,16 @@ pub struct Membership<M> {
     monitor: M,
     alerts: VecDeque<proto::Alert>,
     last_enqueued_alert: Instant,
-    joiners_to_respond: HashMap<Endpoint, VecDeque<OutboundResponse>>,
+    joiners_to_respond: Vec<Endpoint>,
+    // joiners_to_respond: HashMap<Endpoint, VecDeque<OutboundResponse>>,
     batch_window: Duration,
     paxos: FastPaxos,
     announced_proposal: bool,
     joiner_data: HashMap<Endpoint, (NodeId, Metadata)>,
     event_tx: broadcast::Sender<Event>,
     monitor_cancellers: Vec<oneshot::Sender<()>>,
+
+    messages: VecDeque<(Endpoint, Message)>,
 }
 
 impl<M: Monitor> Membership<M> {
@@ -111,40 +114,54 @@ impl<M: Monitor> Membership<M> {
             .collect()
     }
 
-    pub fn handle_message(
-        &mut self,
-        request: Request,
-        response_tx: OutboundResponse,
-        scheduler: &mut Scheduler,
-    ) {
-        use proto::RequestKind::*;
-        let (_target, kind) = request.into_parts();
+    // pub fn handle_message(
+    //     &mut self,
+    //     request: proto::RequestKind,
+    //     response_tx: OutboundResponse,
+    //     scheduler: &mut Scheduler,
+    // ) -> Vec<(Endpoint, proto::ResponseKind)> {
+    //     use proto::RequestKind::*;
+    //     // let (_target, kind) = request.into_parts();
 
-        match kind {
-            PreJoin(msg) => {
-                let res = self.handle_pre_join(msg);
-                response_tx.send(res).unwrap();
-            }
-            Join(msg) => {
-                self.handle_join(msg, response_tx);
-            }
-            BatchedAlert(msg) => {
-                let res = self.handle_batched_alert_message(msg, scheduler);
-                if let Err(_e) = res {
-                    panic!("Wait this wasn't supposed to happen!");
-                }
-            }
-            Probe => {
-                response_tx.send(Ok(self.handle_probe_message())).unwrap();
-            }
-            Consensus(msg) => {
-                // TODO: make paxos syncrhonous
-                // let res = self.paxos.handle_message(msg, scheduler);
-                // if let Err(_e) = res {
-                //     panic!("Wait this wasn't supposed to happen!");
-                // }
-            }
-        };
+    //     match request {
+    //         PreJoin(msg) => {
+    //             let res = self.handle_pre_join(msg);
+    //             response_tx.send(res).unwrap();
+    //         }
+    //         Join(msg) => {
+    //             self.handle_join(msg, response_tx);
+    //         }
+    //         BatchedAlert(msg) => {
+    //             let res = self.handle_batched_alert_message(msg, scheduler);
+    //             if let Err(_e) = res {
+    //                 panic!("Wait this wasn't supposed to happen!");
+    //             }
+    //         }
+    //         Probe => {
+    //             todo!()
+    //             // response_tx.send(Ok(self.handle_probe_message())).unwrap();
+    //         }
+    //         Consensus(msg) => {
+    //             // TODO: make paxos syncrhonous
+    //             // let res = self.paxos.handle_message(msg, scheduler);
+    //             // if let Err(_e) = res {
+    //             //     panic!("Wait this wasn't supposed to happen!");
+    //             // }
+    //         }
+    //     };
+    // }
+
+    pub fn step(&mut self, from: Endpoint, msg: proto::RequestKind) {
+        use proto::RequestKind::*;
+
+        match msg {
+            PreJoin(msg) => self.handle_pre_join(from, msg),
+            Join(msg) => self.handle_join(from, msg),
+            BatchedAlert(msg) => self.handle_batched_alert_message(msg),
+            Consensus(msg) => todo!("hook up paxos"),
+
+            _ => todo!("not implemented yet"),
+        }
     }
 
     pub fn start_classic_round(&mut self) -> Result<()> {
@@ -153,7 +170,7 @@ impl<M: Monitor> Membership<M> {
         todo!()
     }
 
-    pub fn handle_pre_join(&mut self, msg: PreJoinMessage) -> Result<Response> {
+    pub fn handle_pre_join(&mut self, from: Endpoint, msg: PreJoinMessage) {
         let PreJoinMessage {
             sender, node_id, ..
         } = msg;
@@ -185,17 +202,19 @@ impl<M: Monitor> Membership<M> {
             size = %self.view.get_membership_size()
         );
 
-        Ok(Response::new_join(join_res))
+        self.messages
+            .push_back((from, proto::ResponseKind::Join(join_res).into()));
     }
 
-    pub fn handle_join(&mut self, msg: JoinMessage, response_tx: OutboundResponse) {
+    pub fn handle_join(&mut self, from: Endpoint, msg: JoinMessage) {
         if msg.config_id == self.view.get_current_config_id() {
             let config = self.view.get_config();
 
-            self.joiners_to_respond
-                .entry(msg.sender.clone())
-                .or_insert_with(VecDeque::new)
-                .push_back(response_tx);
+            // TODO: do we still need to do this?
+            // self.joiners_to_respond
+            //     .entry(msg.sender.clone())
+            //     .or_insert_with(VecDeque::new)
+            //     .push_back(from);
 
             let alert = proto::Alert {
                 src: self.host_addr.clone(),
@@ -239,9 +258,8 @@ impl<M: Monitor> Membership<M> {
                 }
             };
 
-            response_tx
-                .send(Ok(Response::new(proto::ResponseKind::Join(response))))
-                .expect("Unable to send reseponse");
+            self.messages
+                .push_back((from, proto::ResponseKind::Join(response).into()));
         }
     }
 
@@ -254,11 +272,7 @@ impl<M: Monitor> Membership<M> {
     // return a valid proposal.
     //
     // Edge update messages that do not affect the ongoing proposal need to be dropped.
-    fn handle_batched_alert_message(
-        &mut self,
-        msg_batch: BatchedAlertMessage,
-        scheduler: &mut Scheduler,
-    ) -> Result<()> {
+    fn handle_batched_alert_message(&mut self, msg_batch: BatchedAlertMessage) {
         let current_config_id = self.view.get_current_config_id();
         let size = self.view.get_membership_size();
         let mut proposal: Vec<Endpoint> = msg_batch
@@ -290,8 +304,6 @@ impl<M: Monitor> Membership<M> {
             // TODO: make paxos syncrhonous
             // self.paxos.propose(proposal, scheduler).await?
         }
-
-        Ok(())
     }
 
     fn create_node_status_change_list(&self, proposal: Vec<Endpoint>) -> Vec<NodeStatusChange> {
@@ -484,16 +496,18 @@ impl<M: Monitor> Membership<M> {
         };
 
         for node in proposal {
-            self.joiners_to_respond.remove(&node).and_then(|joiners| {
-                joiners.into_iter().for_each(|joiner| {
-                    joiner
-                        .send(Ok(Response::new_join(join_res.clone())))
-                        .expect("Unable to send response");
-                });
+            self.messages
+                .push_back((node, proto::ResponseKind::Join(join_res.clone()).into()));
+            // self.joiners_to_respond.remove(&node).and_then(|joiners| {
+            //     joiners.into_iter().for_each(|joiner| {
+            //         joiner
+            //             .send(Ok(Response::new_join(join_res.clone())))
+            //             .expect("Unable to send response");
+            //     });
 
-                // This is so the compiler can infer the type of the closure to be Option<()>
-                Some(())
-            });
+            //     // This is so the compiler can infer the type of the closure to be Option<()>
+            //     Some(())
+            // });
         }
     }
 }

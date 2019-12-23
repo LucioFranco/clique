@@ -23,6 +23,34 @@ pub trait Transport<T> {
     fn listen_on(&mut self, bind: T) -> Self::ServerFuture;
 }
 
+#[async_trait::async_trait]
+pub trait Transport2 {
+    type Error: Into<Box<dyn std::error::Error + Send + Sync + 'static>>;
+
+    /// This async should not wait for a response.
+    async fn send_to(&self, dst: Endpoint, message: Message) -> Result<(), Self::Error>;
+
+    async fn recv(&self) -> Result<(Endpoint, Message), Self::Error>;
+}
+
+#[derive(Debug)]
+pub enum Message {
+    Request(proto::RequestKind),
+    Response(proto::ResponseKind),
+}
+
+impl From<proto::RequestKind> for Message {
+    fn from(t: proto::RequestKind) -> Self {
+        Message::Request(t)
+    }
+}
+
+impl From<proto::ResponseKind> for Message {
+    fn from(t: proto::ResponseKind) -> Self {
+        Message::Response(t)
+    }
+}
+
 #[derive(Debug)]
 pub struct Request {
     target: Endpoint,

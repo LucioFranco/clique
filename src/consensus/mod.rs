@@ -5,7 +5,7 @@ use crate::{
     error::{Error, Result},
     transport::{
         proto::{self, Consensus, Consensus::*},
-        Client, Message,
+        Message,
     },
 };
 use futures::FutureExt;
@@ -31,7 +31,7 @@ const BASE_DELAY: u64 = 1000;
 /// scheduled to be run after a random interval of time. The randomness is introduced so that
 /// multiple nodes do not start their own instances of paxos as coordinators.
 #[derive(Debug)]
-pub struct FastPaxos<'mem> {
+pub struct FastPaxos {
     // client: Client,
     my_addr: Endpoint,
     size: usize,
@@ -42,24 +42,24 @@ pub struct FastPaxos<'mem> {
     votes_per_proposal: HashMap<Vec<Endpoint>, usize>,
     cancel_tx: Option<oneshot::Sender<()>>,
 
-    messages: VecDeque<Message>,
+    messages: VecDeque<(Option<Endpoint>, Message)>,
 }
 
 impl FastPaxos {
-    #[allow(dead_code)]
-    // pub fn new(my_addr: Endpoint, size: usize, client: Client, config_id: ConfigId) -> FastPaxos {
-    //     FastPaxos {
-    //         client: client.clone(),
-    //         config_id,
-    //         size,
-    //         my_addr: my_addr.clone(),
-    //         decided: AtomicBool::new(false),
-    //         paxos: Paxos::new(client, size, my_addr, config_id),
-    //         votes_received: HashSet::default(),
-    //         votes_per_proposal: HashMap::default(),
-    //         cancel_tx: None,
-    //     }
-    // }
+    pub fn new(my_addr: Endpoint, size: usize, config_id: ConfigId) -> FastPaxos {
+        FastPaxos {
+            config_id,
+            size,
+            my_addr: my_addr.clone(),
+            decided: AtomicBool::new(false),
+            paxos: Paxos::new(size, my_addr, config_id),
+            votes_received: HashSet::default(),
+            votes_per_proposal: HashMap::default(),
+            cancel_tx: None,
+
+            messages: VecDeque::new(),
+        }
+    }
 
     /// Propose a new membership set to the cluster
     ///
@@ -96,7 +96,7 @@ impl FastPaxos {
             },
         ));
 
-        self.messages.push_back(kind.into());
+        self.messages.push_back((None, kind.into()));
     }
 
     /// Handles a consensus message which the membership service reveives.
@@ -129,30 +129,46 @@ impl FastPaxos {
     //     Ok(())
     // }
 
-    pub fn step(&mut self, msg: Consensus) -> Result<()> {
+    pub fn step(&mut self, msg: Consensus, view: Vec<&Endpoint>) -> Vec<(Endpoint, Message)> {
         match msg {
-            FastRoundPhase2bMessage(req) => self.handle_fast_round(&req).await?,
+            FastRoundPhase2bMessage(req) => self.handle_fast_round(&req),
             Phase1aMessage(req) => self.paxos.handle_phase_1a(req),
             Phase1bMessage(req) => self.paxos.handle_phase_1b(req),
             Phase2aMessage(req) => self.paxos.handle_phase_2a(req),
             Phase2bMessage(req) => {
                 let proposal = self.paxos.handle_phase_2b(req);
-                self.on_decide(proposal, scheduler);
+                // self.on_decide(proposal);
             }
         };
+
+        let mut msgs = Vec::new();
+
+        for msg in self.messages.drain(..) {
+            match msg {
+                (Some(to), msg) => msgs.push((to, msg)),
+                (None, msg) => {
+                    for to in &view {
+                        let to = to.clone();
+                        msgs.push((to.clone(), msg.clone()));
+                    }
+                }
+            }
+        }
+
+        msgs
     }
 
-    fn handle_fast_round(&mut self, request: &proto::FastRoundPhase2bMessage) -> crate::Result<()> {
+    fn handle_fast_round(&mut self, request: &proto::FastRoundPhase2bMessage) {
         if request.config_id != self.config_id {
-            return Err(Error::new_unexpected_request(None));
+            return;
         }
 
         if self.votes_received.contains(&request.sender) {
-            return Err(Error::vote_already_received());
+            return;
         }
 
         if self.decided.load(Ordering::SeqCst) {
-            return Err(Error::already_reached_consensus());
+            return;
         }
 
         self.votes_received.insert(request.sender.clone());
@@ -168,11 +184,9 @@ impl FastPaxos {
         if self.votes_received.len() >= (self.size as f64 - f) as usize
             && *count >= (self.size as f64 - f) as usize
         {
-            // self.on_decide(request.endpoints.clone(), scheduler);
-            return Ok(());
+            // self.on_decide(request.endpoints.clone());
+            return;
         }
-
-        Err(Error::fast_round_failure())
     }
 
     // fn on_decide(&mut self, proposal: Vec<Endpoint>, scheduler: &mut Scheduler) {

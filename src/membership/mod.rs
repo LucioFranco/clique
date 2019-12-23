@@ -13,7 +13,7 @@ use crate::{
             self, Alert, BatchedAlertMessage, EdgeStatus, JoinMessage, JoinResponse, JoinStatus,
             Metadata, NodeStatus, PreJoinMessage,
         },
-        Client, Message, Request, Response,
+        Message, Request, Response,
     },
 };
 use cut_detector::CutDetector;
@@ -57,33 +57,31 @@ impl<M: Monitor> Membership<M> {
         cut_detector: CutDetector,
         monitor: M,
         event_tx: broadcast::Sender<Event>,
-        // client: &Client,
     ) -> Self {
         // TODO: setup startup tasks
 
-        // let paxos = FastPaxos::new(
-        //     host_addr.clone(),
-        //     view.get_membership_size(),
-        //     client.clone(),
-        //     view.get_current_config_id(),
-        // );
+        let paxos = FastPaxos::new(
+            host_addr.clone(),
+            view.get_membership_size(),
+            view.get_current_config_id(),
+        );
 
-        // Self {
-        //     host_addr,
-        //     view,
-        //     cut_detector,
-        //     monitor,
-        //     paxos,
-        //     alerts: VecDeque::default(),
-        //     last_enqueued_alert: Instant::now(),
-        //     joiners_to_respond: HashMap::default(),
-        //     batch_window: Duration::new(10, 0),
-        //     announced_proposal: false,
-        //     joiner_data: HashMap::default(),
-        //     monitor_cancellers: vec![],
-        //     event_tx,
-        // }
-        todo!()
+        Self {
+            host_addr,
+            view,
+            cut_detector,
+            monitor,
+            paxos,
+            alerts: VecDeque::default(),
+            last_enqueued_alert: Instant::now(),
+            joiners_to_respond: Vec::new(),
+            batch_window: Duration::new(10, 0),
+            announced_proposal: false,
+            joiner_data: HashMap::default(),
+            monitor_cancellers: vec![],
+            event_tx,
+            messages: VecDeque::new(),
+        }
     }
 
     #[allow(dead_code)]
@@ -114,43 +112,6 @@ impl<M: Monitor> Membership<M> {
             .collect()
     }
 
-    // pub fn handle_message(
-    //     &mut self,
-    //     request: proto::RequestKind,
-    //     response_tx: OutboundResponse,
-    //     scheduler: &mut Scheduler,
-    // ) -> Vec<(Endpoint, proto::ResponseKind)> {
-    //     use proto::RequestKind::*;
-    //     // let (_target, kind) = request.into_parts();
-
-    //     match request {
-    //         PreJoin(msg) => {
-    //             let res = self.handle_pre_join(msg);
-    //             response_tx.send(res).unwrap();
-    //         }
-    //         Join(msg) => {
-    //             self.handle_join(msg, response_tx);
-    //         }
-    //         BatchedAlert(msg) => {
-    //             let res = self.handle_batched_alert_message(msg, scheduler);
-    //             if let Err(_e) = res {
-    //                 panic!("Wait this wasn't supposed to happen!");
-    //             }
-    //         }
-    //         Probe => {
-    //             todo!()
-    //             // response_tx.send(Ok(self.handle_probe_message())).unwrap();
-    //         }
-    //         Consensus(msg) => {
-    //             // TODO: make paxos syncrhonous
-    //             // let res = self.paxos.handle_message(msg, scheduler);
-    //             // if let Err(_e) = res {
-    //             //     panic!("Wait this wasn't supposed to happen!");
-    //             // }
-    //         }
-    //     };
-    // }
-
     pub fn step(&mut self, from: Endpoint, msg: proto::RequestKind) {
         use proto::RequestKind::*;
 
@@ -158,9 +119,19 @@ impl<M: Monitor> Membership<M> {
             PreJoin(msg) => self.handle_pre_join(from, msg),
             Join(msg) => self.handle_join(from, msg),
             BatchedAlert(msg) => self.handle_batched_alert_message(msg),
-            Consensus(msg) => todo!("hook up paxos"),
+            Consensus(msg) => {
+                let view = self
+                    .view
+                    .get_ring(0)
+                    .expect("Ring zero should always exist")
+                    .iter()
+                    .collect();
 
-            _ => todo!("not implemented yet"),
+                let msgs = self.paxos.step(msg, view);
+                self.messages.extend(msgs);
+            }
+
+            _ => todo!("request type not implemented yet"),
         }
     }
 
@@ -361,26 +332,26 @@ impl<M: Monitor> Membership<M> {
     pub fn create_failure_detectors(
         &mut self,
         scheduler: &mut Scheduler,
-        client: &Client,
     ) -> Result<mpsc::Receiver<(Endpoint, ConfigId)>> {
-        let (tx, rx) = mpsc::channel(1000);
+        todo!()
+        // let (tx, rx) = mpsc::channel(1000);
 
-        for subject in self.view.get_subjects(&self.host_addr)? {
-            let (mon_tx, mon_rx) = oneshot::channel();
+        // for subject in self.view.get_subjects(&self.host_addr)? {
+        //     let (mon_tx, mon_rx) = oneshot::channel();
 
-            let fut = self.monitor.monitor(
-                subject.clone(),
-                client.clone(),
-                self.view.get_current_config_id(),
-                tx.clone(),
-                mon_rx,
-            );
-            scheduler.push(Box::pin(fut.map(|_| SchedulerEvents::None)));
+        //     let fut = self.monitor.monitor(
+        //         subject.clone(),
+        //         client.clone(),
+        //         self.view.get_current_config_id(),
+        //         tx.clone(),
+        //         mon_rx,
+        //     );
+        //     scheduler.push(Box::pin(fut.map(|_| SchedulerEvents::None)));
 
-            self.monitor_cancellers.push(mon_tx);
-        }
+        //     self.monitor_cancellers.push(mon_tx);
+        // }
 
-        Ok(rx)
+        // Ok(rx)
     }
 
     #[allow(dead_code)]
@@ -438,7 +409,7 @@ impl<M: Monitor> Membership<M> {
     /// Any node that is not in the membership list will be added to the cluster,
     /// and any node that is currently in the membership list, but not in the proposal
     /// will be removed.
-    pub fn on_decide(&mut self, proposal: Vec<Endpoint>) -> Result<()> {
+    pub fn on_decide(&mut self, proposal: Vec<Endpoint>) {
         // TODO: Handle metadata updates
         // TODO: Handle subscriptions
 
@@ -446,9 +417,9 @@ impl<M: Monitor> Membership<M> {
 
         for node in &proposal {
             if self.view.is_host_present(&node) {
-                self.view.ring_delete(&node)?;
+                self.view.ring_delete(&node);
             } else if let Some((node_id, _metadata)) = self.joiner_data.remove(node) {
-                self.view.ring_add(node.clone(), node_id)?;
+                self.view.ring_add(node.clone(), node_id);
             } else {
                 panic!("Node not present in pre-join metadata")
             }
@@ -473,8 +444,6 @@ impl<M: Monitor> Membership<M> {
         // self.paxos = FastPaxos::new(self.host_addr, self.view.get_membership_size(), )
 
         self.respond_to_joiners(proposal);
-
-        Ok(())
     }
 
     fn cancel_failure_detectors(&mut self) {

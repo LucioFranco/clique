@@ -4,7 +4,7 @@ use crate::{
     event::Event,
     membership::{cut_detector::CutDetector, view::View, Membership},
     monitor::ping_pong,
-    transport::{client, proto, Client, Message, Request, Response, Transport2},
+    transport::{proto, Message, Request, Response, Transport2},
 };
 use futures::{
     future::{self, BoxFuture, FutureExt},
@@ -107,6 +107,15 @@ where
         todo!()
     }
 
+    pub async fn start(transport: T, listen_target: Endpoint) {
+        let node_id = NodeId::default();
+        let node_ids = vec![node_id.clone()];
+        let endpoints = vec![listen_target.clone()];
+
+        let mut c = Cluster::new2(node_id, node_ids, endpoints, transport, listen_target);
+        c.run().await.unwrap()
+    }
+
     pub(crate) fn new2(
         node_id: NodeId,
         node_ids: Vec<NodeId>,
@@ -204,7 +213,7 @@ where
                             continue;
                         },
                         SchedulerEvents::Decision(proposal) => {
-                            self.membership.on_decide(proposal)?;
+                            self.membership.on_decide(proposal);
                             continue;
                         }
                         SchedulerEvents::None => continue,

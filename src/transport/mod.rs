@@ -1,7 +1,4 @@
-pub mod client;
 pub mod proto;
-
-pub use self::client::Client;
 
 use crate::common::Endpoint;
 use futures::Stream;
@@ -28,24 +25,20 @@ pub trait Transport2 {
     type Error: Into<Box<dyn std::error::Error + Send + Sync + 'static>>;
 
     /// This async should not wait for a response.
-    async fn send_to(&self, dst: Endpoint, message: Message) -> Result<(), Self::Error>;
+    async fn send_to(&mut self, dst: Endpoint, message: Message) -> Result<(), Self::Error>;
 
-    async fn recv(&self) -> Result<(Endpoint, Message), Self::Error>;
+    async fn recv(&mut self) -> Result<(Endpoint, Message), Self::Error>;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Message {
     Request(proto::RequestKind),
     Response(proto::ResponseKind),
-    Boradcast(proto::RequestKind),
 }
 
 impl From<proto::RequestKind> for Message {
     fn from(t: proto::RequestKind) -> Self {
-        match t {
-            val @ proto::RequestKind::Consensus(_) => Message::Boradcast(val),
-            _ => Message::Request(t),
-        }
+        Message::Request(t)
     }
 }
 

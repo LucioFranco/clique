@@ -195,7 +195,7 @@ where
                         _ => todo!("ooops")
                     }
 
-                    // TODO: send out messages
+                    self.send_messages();
                 },
                 event = self.scheduler.select_next_some() => {
                     match event {
@@ -226,6 +226,12 @@ where
                 //     }
                 // },
             };
+        }
+    }
+
+    fn send_messages(&mut self) {
+        for (to, msg) in self.membership.drain_messages() {
+            self.transport.send_to(to, msg);
         }
     }
 

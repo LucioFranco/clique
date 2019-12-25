@@ -202,7 +202,7 @@ impl Paxos {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn handle_phase_2b(&mut self, request: Phase2bMessage) {
+    pub(crate) fn handle_phase_2b(&mut self, request: Phase2bMessage) -> Option<Vec<Endpoint>> {
         let Phase2bMessage {
             config_id,
             rnd,
@@ -211,7 +211,7 @@ impl Paxos {
         } = request;
 
         if config_id != self.config_id {
-            return;
+            return None;
         }
 
         let phase_2b_messages_in_rnd = self
@@ -220,12 +220,12 @@ impl Paxos {
             .or_insert_with(HashMap::new);
 
         if phase_2b_messages_in_rnd.len() > (self.size / 2) && !self.decided {
-            let decision = endpoints;
             // TODO: let caller know of decision
             self.decided = true;
 
             // TODO: propogate decision
-        }
+            Some(endpoints)
+        } else { None }
     }
 }
 

@@ -102,7 +102,13 @@ impl Paxos {
             node_index: hash,
         };
 
-        debug!(message = "Sending request");
+        debug!(
+            message = "Sending Phase 1a message",
+            config_id = self.config_id,
+            crnd = ?self.crnd,
+            rnd = ?self.rnd,
+            vrnd = ?self.vrnd
+        );
 
         let kind = RequestKind::Consensus(Consensus::Phase1aMessage(Phase1aMessage {
             config_id: self.config_id,
@@ -135,13 +141,20 @@ impl Paxos {
         if self.crnd < rank {
             self.crnd = rank;
         } else {
-            // TODO: new error type for rejecting message due to lower rank
             debug!(
                 message = "Rejecting request as round is < current round",
                 crnd = self.crnd.round
             );
             return;
         }
+
+        debug!(
+            message = "Sending Phase 1a message",
+            config_id = self.config_id,
+            crnd = ?self.crnd,
+            rnd = ?self.rnd,
+            vrnd = ?self.vrnd
+        );
 
         let kind = RequestKind::Consensus(Consensus::Phase1bMessage(Phase1bMessage {
             config_id: self.config_id,
@@ -353,12 +366,12 @@ mod tests {
     }
 
     #[test]
-    fn test_start_phase1a() {
+    fn test_paxos_start_phase1a() {
         trace_init();
 
         let mut pax = Paxos::new(K, "san-francisco".to_string(), CONFIG_ID);
 
-        let req = pax.start_phase_1a(1);
+        pax.start_phase_1a(1);
         let msg = extract_message!(pax, Phase1aMessage);
 
         assert_eq!(msg.config_id, CONFIG_ID);
@@ -373,12 +386,12 @@ mod tests {
 
     #[test]
     #[should_panic]
-    fn test_start_phase1a_fail() {
+    fn test_paxos_start_phase1a_fail() {
         trace_init();
 
         let mut pax = Paxos::new(K, "san-francisco".to_string(), CONFIG_ID);
 
-        let req = pax.start_phase_1a(0);
+        pax.start_phase_1a(0);
         let msg = extract_message!(pax, Phase1aMessage);
 
         pax.handle_phase_1a(msg);
@@ -387,5 +400,50 @@ mod tests {
         // At this point, anyone starting a new paxos round needs to have the round at >= 1
         pax.start_phase_1a(0);
         let _msg = extract_message!(pax, Phase1aMessage);
+    }
+
+    #[test]
+    fn test_paxos_handle_phase1a_safe_path() {
+        trace_init();
+
+        let req = Phase1aMessage {
+            sender: "chicago".into(),
+            config_id: 1,
+            rank: Rank {
+            round: 3,
+            node_index: hash_str("chicago"),
+        }
+
+        };
+
+        let mut pax = Paxos::new(K, "san-francisco".to_string(), 1);
+
+        let req = pax.handle_phase_1a(req);
+        let msg = extract_message!(pax, Phase1bMessage);
+
+        assert_eq!(msg.config_id, 1);
+        assert_eq!(msg.rnd, Rank { round: 0, node_index: 0 });
+        assert_eq!(msg.vrnd, Rank { round: 0, node_index: 0 });
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_paxos_handle_phase1a_wrong_config() {
+        trace_init();
+
+        let rank = Rank {
+            round: 3,
+            node_index: hash_str("chicago"),
+        };
+
+        let req = Phase1aMessage {
+            sender: "chicago".into(),
+            config_id: 1,
+            rank,
+        };
+
+        let mut pax = Paxos::new(K, "san-francisco".to_string(), 2);
+
+        let req = pax.handle_phase_1a(req);
     }
 }

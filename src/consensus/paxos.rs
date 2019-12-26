@@ -15,6 +15,8 @@ use std::{
     convert::TryInto,
     hash::Hasher,
 };
+
+use tracing::{debug, info};
 use twox_hash::XxHash32;
 
 #[derive(Debug)]
@@ -77,21 +79,30 @@ impl Paxos {
     /// Using ranks as round numbers ensure uniquenes even with multiple rounds happening at the
     /// same time.
     pub fn start_phase_1a(&mut self, round: u32) {
+        debug!(
+            message = "Start phase 1a",
+            round = round,
+            crnd = self.crnd.round
+        );
         if self.crnd.round > round {
-            // TODO: handle these () returns
+            debug!(
+                message = "Rejecting request as round is < current round",
+                crnd = self.crnd.round
+            );
             return;
         }
 
         let mut hasher = XxHash32::with_seed(0);
         hasher.write(self.my_addr.as_bytes());
 
+        let hash = hash_str(&self.my_addr);
+
         self.crnd = Rank {
             round,
-            node_index: hasher
-                .finish()
-                .try_into()
-                .expect("Got > 32 bits from 32 bit hasher"),
+            node_index: hash,
         };
+
+        debug!(message = "Sending request");
 
         let kind = RequestKind::Consensus(Consensus::Phase1aMessage(Phase1aMessage {
             config_id: self.config_id,
@@ -114,7 +125,10 @@ impl Paxos {
         } = request;
 
         if config_id != self.config_id {
-            // TODO: add logging here
+            debug!(
+                message = "Rejecting as config_id is not current",
+                config_id = self.config_id
+            );
             return;
         }
 
@@ -122,6 +136,10 @@ impl Paxos {
             self.crnd = rank;
         } else {
             // TODO: new error type for rejecting message due to lower rank
+            debug!(
+                message = "Rejecting request as round is < current round",
+                crnd = self.crnd.round
+            );
             return;
         }
 
@@ -298,5 +316,76 @@ fn select_proposal(messages: &[Phase1bMessage], size: usize) -> Vec<Endpoint> {
             .map(|msg| msg.vval.clone())
             .nth(0)
             .unwrap_or_else(Vec::new)
+    }
+}
+
+fn hash_str(input: &str) -> u32 {
+    let mut hasher = XxHash32::with_seed(0);
+    hasher.write(input.as_bytes());
+
+    hasher
+        .finish()
+        .try_into()
+        .expect("Got > 32 bits from 32 bit hasher")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::support::trace_init;
+
+    const K: usize = 5;
+    const NODES: [&str; 5] = ["chicago", "new-york", "boston", "seattle", "la"];
+    const CONFIG_ID: i64 = 0;
+
+    macro_rules! extract_message {
+        ($pax:expr, $mt:ident) => {
+            if let (_, Message::Request(message)) = $pax.messages.pop_front().unwrap() {
+                if let RequestKind::Consensus(Consensus::$mt(msg)) = message {
+                    msg
+                } else {
+                    panic!("Incorrect type of request!")
+                }
+            } else {
+                panic!("No messages present in the queue!")
+            }
+        };
+    }
+
+    #[test]
+    fn test_start_phase1a() {
+        trace_init();
+
+        let mut pax = Paxos::new(K, "san-francisco".to_string(), CONFIG_ID);
+
+        let req = pax.start_phase_1a(1);
+        let msg = extract_message!(pax, Phase1aMessage);
+
+        assert_eq!(msg.config_id, CONFIG_ID);
+        assert_eq!(
+            msg.rank,
+            Rank {
+                round: 1,
+                node_index: hash_str("san-francisco")
+            }
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_start_phase1a_fail() {
+        trace_init();
+
+        let mut pax = Paxos::new(K, "san-francisco".to_string(), CONFIG_ID);
+
+        let req = pax.start_phase_1a(0);
+        let msg = extract_message!(pax, Phase1aMessage);
+
+        pax.handle_phase_1a(msg);
+        let _msg = extract_message!(pax, Phase1aMessage);
+
+        // At this point, anyone starting a new paxos round needs to have the round at >= 1
+        pax.start_phase_1a(0);
+        let _msg = extract_message!(pax, Phase1aMessage);
     }
 }

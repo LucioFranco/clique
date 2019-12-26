@@ -225,7 +225,9 @@ impl Paxos {
 
             // TODO: propogate decision
             Some(endpoints)
-        } else { None }
+        } else {
+            None
+        }
     }
 }
 

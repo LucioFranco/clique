@@ -142,15 +142,17 @@ impl FastPaxos {
     pub fn step(&mut self, msg: Consensus, view: Vec<&Endpoint>) -> Vec<(Endpoint, Message)> {
         match msg {
             FastRoundPhase2bMessage(req) => {
-                let proposal = self.handle_fast_round(req);
-                self.proposal = proposal;
+                if let Some(proposal) = self.handle_fast_round(req) {
+                    self.proposal = Some(proposal);
+                }
             }
             Phase1aMessage(req) => self.paxos.handle_phase_1a(req),
             Phase1bMessage(req) => self.paxos.handle_phase_1b(req),
             Phase2aMessage(req) => self.paxos.handle_phase_2a(req),
             Phase2bMessage(req) => {
-                let proposal = self.paxos.handle_phase_2b(req);
-                self.proposal = proposal;
+                if let Some(proposal) = self.paxos.handle_phase_2b(req) {
+                    self.proposal = Some(proposal);
+                }
             }
         };
 
@@ -185,38 +187,59 @@ impl FastPaxos {
         &mut self,
         request: proto::FastRoundPhase2bMessage,
     ) -> Option<Vec<Endpoint>> {
-        let proto::FastRoundPhase2bMessage { 
+        let proto::FastRoundPhase2bMessage {
             config_id,
             sender,
             endpoints,
             ..
         } = request;
 
+        // The proposer is on the wrong configuration
         if config_id != self.config_id {
             return None;
         }
 
+        // We have already seen this proposal
         if self.votes_received.contains(&sender) {
             return None;
         }
 
+        // We have already make a decision
         if self.decided.load(Ordering::SeqCst) {
             return None;
         }
 
         self.votes_received.insert(sender.clone());
 
-        let count = self
-            .votes_per_proposal
+        self.votes_per_proposal
             .entry(endpoints.clone())
-            .and_modify(|votes| *votes += 1)
             .or_insert(0);
 
-        let f = ((self.size - 1) as f64 / 4f64).floor();
+        self.votes_per_proposal
+            .entry(endpoints.clone())
+            .and_modify(|c| *c += 1);
 
-        if self.votes_received.len() >= (self.size as f64 - f) as usize
-            && *count >= (self.size as f64 - f) as usize
-        {
+        let count = self
+            .votes_per_proposal
+            .get(&endpoints.clone())
+            .unwrap_or_else(|| {
+                unreachable!("Shouldn't happen as we ensure that the value is initialized")
+            });
+
+        // Fast paxos resiliency
+        // https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/tr-2005-112.pdf
+        // secion 3.4.1
+        let f = ((self.size - 1) as f64 / 4f64).floor() as usize;
+
+        eprintln!(
+            "votes_received: {}, count: {}, size: {}, f: {}",
+            self.votes_received.len(),
+            count,
+            self.size,
+            f
+        );
+
+        if self.votes_received.len() >= self.size - f && *count >= self.size - f {
             // self.on_decide(request.endpoints.clone());
             Some(endpoints)
         } else {
@@ -273,50 +296,42 @@ mod tests {
 
         let mut fp = FastPaxos::new(NODES[0].to_string(), 5, CONFIG_ID);
 
-        let req1 = FastRoundPhase2bMessage(
-            proto::FastRoundPhase2bMessage {
-                sender: NODES[0].to_string(),
-                config_id: CONFIG_ID,
-                endpoints: PROPOSAL.clone(),
-            },
-        );
+        let req1 = FastRoundPhase2bMessage(proto::FastRoundPhase2bMessage {
+            sender: NODES[0].to_string(),
+            config_id: CONFIG_ID,
+            endpoints: PROPOSAL.clone(),
+        });
 
         // Fast round 2b messages don't send any broadcasts
         let result = fp.step(req1, vec![]);
         assert!(!fp.has_decided());
 
-        let req2 = FastRoundPhase2bMessage(
-            proto::FastRoundPhase2bMessage {
-                sender: NODES[1].to_string(),
-                config_id: CONFIG_ID,
-                endpoints: PROPOSAL.clone(),
-            },
-        );
+        let req2 = FastRoundPhase2bMessage(proto::FastRoundPhase2bMessage {
+            sender: NODES[1].to_string(),
+            config_id: CONFIG_ID,
+            endpoints: PROPOSAL.clone(),
+        });
 
         let result = fp.step(req2, vec![]);
         assert!(!fp.has_decided());
 
-        let req3 = FastRoundPhase2bMessage(
-            proto::FastRoundPhase2bMessage {
-                sender: NODES[2].to_string(),
-                config_id: CONFIG_ID,
-                endpoints: PROPOSAL.clone(),
-            },
-        );
+        let req3 = FastRoundPhase2bMessage(proto::FastRoundPhase2bMessage {
+            sender: NODES[2].to_string(),
+            config_id: CONFIG_ID,
+            endpoints: PROPOSAL.clone(),
+        });
 
         let result = fp.step(req3, vec![]);
         assert!(!fp.has_decided());
 
-        let req4 = FastRoundPhase2bMessage(
-            proto::FastRoundPhase2bMessage {
-                sender: NODES[3].to_string(),
-                config_id: CONFIG_ID,
-                endpoints: PROPOSAL.clone(),
-            },
-        );
+        let req4 = FastRoundPhase2bMessage(proto::FastRoundPhase2bMessage {
+            sender: NODES[3].to_string(),
+            config_id: CONFIG_ID,
+            endpoints: PROPOSAL.clone(),
+        });
 
         let result = fp.step(req4, vec![]);
-        assert!(!fp.has_decided());
+        assert!(fp.has_decided());
         assert_eq!(fp.proposal(), Some(PROPOSAL.clone()));
 
         let wrong_proposal = vec![
@@ -327,13 +342,11 @@ mod tests {
             "la".to_string(),
         ];
 
-        let req5 = FastRoundPhase2bMessage(
-            proto::FastRoundPhase2bMessage {
-                sender: NODES[4].to_string(),
-                config_id: CONFIG_ID,
-                endpoints: wrong_proposal,
-            },
-        );
+        let req5 = FastRoundPhase2bMessage(proto::FastRoundPhase2bMessage {
+            sender: NODES[4].to_string(),
+            config_id: CONFIG_ID,
+            endpoints: wrong_proposal,
+        });
 
         let result = fp.step(req5, vec![]);
         assert!(fp.has_decided());

@@ -459,4 +459,41 @@ mod tests {
         // test will panic because no message was sent
         let _msg = extract_message!(pax, Phase1bMessage);
     }
+
+    #[test]
+    #[should_panic]
+    fn test_paxos_handle_phase1a_wrong_rank() {
+        trace_init();
+
+        let rank = Rank {
+            round: 0,
+            node_index: hash_str("chicago"),
+        };
+
+        let req = Phase1aMessage {
+            sender: "chicago".into(),
+            config_id: 2,
+            rank,
+        };
+
+        let mut pax = Paxos::new(K, "san-francisco".to_string(), 2);
+
+        pax.handle_phase_1a(req);
+        let _msg = extract_message!(pax, Phase1bMessage);
+
+        let rank = Rank {
+            round: 0,
+            node_index: hash_str("chicago"),
+        };
+
+        let req = Phase1aMessage {
+            sender: "chicago".into(),
+            config_id: 2,
+            rank,
+        };
+
+        pax.handle_phase_1a(req);
+        // test will panic because no message was sent
+        let _msg = extract_message!(pax, Phase1bMessage);
+    }
 }

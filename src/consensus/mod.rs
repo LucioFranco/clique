@@ -43,6 +43,7 @@ pub struct FastPaxos {
     cancel_tx: Option<oneshot::Sender<()>>,
 
     messages: VecDeque<(Option<Endpoint>, Message)>,
+    proposal: Option<Vec<Endpoint>>,
 }
 
 impl FastPaxos {
@@ -58,7 +59,16 @@ impl FastPaxos {
             cancel_tx: None,
 
             messages: VecDeque::new(),
+            proposal: None,
         }
+    }
+
+    pub fn has_decided(&self) -> bool {
+        self.proposal.is_some()
+    }
+
+    pub fn proposal(&mut self) -> Option<Vec<Endpoint>> {
+        self.proposal.as_ref().map(|v| v.clone())
     }
 
     /// Propose a new membership set to the cluster
@@ -131,13 +141,18 @@ impl FastPaxos {
 
     pub fn step(&mut self, msg: Consensus, view: Vec<&Endpoint>) -> Vec<(Endpoint, Message)> {
         match msg {
-            FastRoundPhase2bMessage(req) => self.handle_fast_round(&req),
+            FastRoundPhase2bMessage(req) => {
+                if let Some(proposal) = self.handle_fast_round(req) {
+                    self.proposal = Some(proposal);
+                }
+            }
             Phase1aMessage(req) => self.paxos.handle_phase_1a(req),
             Phase1bMessage(req) => self.paxos.handle_phase_1b(req),
             Phase2aMessage(req) => self.paxos.handle_phase_2a(req),
             Phase2bMessage(req) => {
-                let proposal = self.paxos.handle_phase_2b(req);
-                // self.on_decide(proposal);
+                if let Some(proposal) = self.paxos.handle_phase_2b(req) {
+                    self.proposal = Some(proposal);
+                }
             }
         };
 
@@ -145,7 +160,9 @@ impl FastPaxos {
 
         for msg in self.messages.drain(..) {
             match msg {
+                // Unary message
                 (Some(to), msg) => msgs.push((to, msg)),
+                // Broadcast message.. need a better abstraction
                 (None, msg) => {
                     for to in &view {
                         let to = to.clone();
@@ -158,34 +175,75 @@ impl FastPaxos {
         msgs
     }
 
-    fn handle_fast_round(&mut self, request: &proto::FastRoundPhase2bMessage) {
-        if request.config_id != self.config_id {
-            return;
+    /// Handles fast round message in fast paxos, which is really a classic round Phase2b message
+    /// but the state of the cluster is such that, you have an almost everywhere agreement on the
+    /// proposal as all nodes are processing the same alerts for the nodes in the system.
+    ///
+    /// If 3/4th of the nodes in the system vote for the same proposal, it is automatically
+    /// accepted.
+    ///
+    /// If not, the cluster falls back to classic paxos for this round.
+    fn handle_fast_round(
+        &mut self,
+        request: proto::FastRoundPhase2bMessage,
+    ) -> Option<Vec<Endpoint>> {
+        let proto::FastRoundPhase2bMessage {
+            config_id,
+            sender,
+            endpoints,
+            ..
+        } = request;
+
+        // The proposer is on the wrong configuration
+        if config_id != self.config_id {
+            return None;
         }
 
-        if self.votes_received.contains(&request.sender) {
-            return;
+        // We have already seen this proposal
+        if self.votes_received.contains(&sender) {
+            return None;
         }
 
+        // We have already make a decision
         if self.decided.load(Ordering::SeqCst) {
-            return;
+            return None;
         }
 
-        self.votes_received.insert(request.sender.clone());
+        self.votes_received.insert(sender.clone());
+
+        self.votes_per_proposal
+            .entry(endpoints.clone())
+            .or_insert(0);
+
+        self.votes_per_proposal
+            .entry(endpoints.clone())
+            .and_modify(|c| *c += 1);
 
         let count = self
             .votes_per_proposal
-            .entry(request.endpoints.clone())
-            .and_modify(|votes| *votes += 1)
-            .or_insert(0);
+            .get(&endpoints.clone())
+            .unwrap_or_else(|| {
+                unreachable!("Shouldn't happen as we ensure that the value is initialized")
+            });
 
-        let f = ((self.size - 1) as f64 / 4f64).floor();
+        // Fast paxos resiliency
+        // https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/tr-2005-112.pdf
+        // secion 3.4.1
+        let f = ((self.size - 1) as f64 / 4f64).floor() as usize;
 
-        if self.votes_received.len() >= (self.size as f64 - f) as usize
-            && *count >= (self.size as f64 - f) as usize
-        {
+        eprintln!(
+            "votes_received: {}, count: {}, size: {}, f: {}",
+            self.votes_received.len(),
+            count,
+            self.size,
+            f
+        );
+
+        if self.votes_received.len() >= self.size - f && *count >= self.size - f {
             // self.on_decide(request.endpoints.clone());
-            return;
+            Some(endpoints)
+        } else {
+            None
         }
     }
 
@@ -217,5 +275,81 @@ impl FastPaxos {
         let jitter = ((-1000f64 * (1.0f64 - rng.gen::<f64>()).ln()) / jitter_rate) as u64;
 
         Duration::from_millis(jitter + BASE_DELAY)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const K: i32 = 5;
+    const NODES: [&str; 5] = ["chicago", "new-york", "boston", "seattle", "la"];
+    const CONFIG_ID: i64 = 0;
+    #[test]
+    fn test_handle_fast_round() {
+        let PROPOSAL: Vec<Endpoint> = vec![
+            "chicago".to_string(),
+            "new-york".to_string(),
+            "boston".to_string(),
+            "seattle".to_string(),
+        ];
+
+        let mut fp = FastPaxos::new(NODES[0].to_string(), 5, CONFIG_ID);
+
+        let req1 = FastRoundPhase2bMessage(proto::FastRoundPhase2bMessage {
+            sender: NODES[0].to_string(),
+            config_id: CONFIG_ID,
+            endpoints: PROPOSAL.clone(),
+        });
+
+        // Fast round 2b messages don't send any broadcasts
+        let result = fp.step(req1, vec![]);
+        assert!(!fp.has_decided());
+
+        let req2 = FastRoundPhase2bMessage(proto::FastRoundPhase2bMessage {
+            sender: NODES[1].to_string(),
+            config_id: CONFIG_ID,
+            endpoints: PROPOSAL.clone(),
+        });
+
+        let result = fp.step(req2, vec![]);
+        assert!(!fp.has_decided());
+
+        let req3 = FastRoundPhase2bMessage(proto::FastRoundPhase2bMessage {
+            sender: NODES[2].to_string(),
+            config_id: CONFIG_ID,
+            endpoints: PROPOSAL.clone(),
+        });
+
+        let result = fp.step(req3, vec![]);
+        assert!(!fp.has_decided());
+
+        let req4 = FastRoundPhase2bMessage(proto::FastRoundPhase2bMessage {
+            sender: NODES[3].to_string(),
+            config_id: CONFIG_ID,
+            endpoints: PROPOSAL.clone(),
+        });
+
+        let result = fp.step(req4, vec![]);
+        assert!(fp.has_decided());
+        assert_eq!(fp.proposal(), Some(PROPOSAL.clone()));
+
+        let wrong_proposal = vec![
+            "chicago".to_string(),
+            "new-york".to_string(),
+            "boston".to_string(),
+            "seattle".to_string(),
+            "la".to_string(),
+        ];
+
+        let req5 = FastRoundPhase2bMessage(proto::FastRoundPhase2bMessage {
+            sender: NODES[4].to_string(),
+            config_id: CONFIG_ID,
+            endpoints: wrong_proposal,
+        });
+
+        let result = fp.step(req5, vec![]);
+        assert!(fp.has_decided());
+        assert_eq!(fp.proposal(), Some(PROPOSAL));
     }
 }

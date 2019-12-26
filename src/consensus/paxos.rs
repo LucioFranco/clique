@@ -410,10 +410,9 @@ mod tests {
             sender: "chicago".into(),
             config_id: 1,
             rank: Rank {
-            round: 3,
-            node_index: hash_str("chicago"),
-        }
-
+                round: 3,
+                node_index: hash_str("chicago"),
+            },
         };
 
         let mut pax = Paxos::new(K, "san-francisco".to_string(), 1);
@@ -422,8 +421,20 @@ mod tests {
         let msg = extract_message!(pax, Phase1bMessage);
 
         assert_eq!(msg.config_id, 1);
-        assert_eq!(msg.rnd, Rank { round: 0, node_index: 0 });
-        assert_eq!(msg.vrnd, Rank { round: 0, node_index: 0 });
+        assert_eq!(
+            msg.rnd,
+            Rank {
+                round: 0,
+                node_index: 0
+            }
+        );
+        assert_eq!(
+            msg.vrnd,
+            Rank {
+                round: 0,
+                node_index: 0
+            }
+        );
     }
 
     #[test]
@@ -445,5 +456,7 @@ mod tests {
         let mut pax = Paxos::new(K, "san-francisco".to_string(), 2);
 
         let req = pax.handle_phase_1a(req);
+        // test will panic because no message was sent
+        let _msg = extract_message!(pax, Phase1bMessage);
     }
 }

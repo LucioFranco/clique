@@ -167,7 +167,7 @@ impl Paxos {
         self.messages.push_back((Some(sender), kind.into()));
     }
 
-    /// At coordinator, coolect phase 1b messages from acceptors and check if they have already
+    /// At coordinator, collect phase 1b messages from acceptors and check if they have already
     /// voted and if a value might have already been chosen
     #[allow(dead_code)]
     pub(crate) fn handle_phase_1b(&mut self, request: Phase1bMessage) {
@@ -213,10 +213,21 @@ impl Paxos {
         } = request;
 
         if config_id != self.config_id {
+            debug!(
+                message = "Rejecting as config_id is not current",
+                config_id = self.config_id
+            );
             return;
         }
 
         if self.rnd <= rnd && self.vrnd != rnd {
+            debug!(
+                message = "Sending Phase 2b message",
+                config_id = self.config_id,
+                crnd = ?self.crnd,
+                rnd = ?self.rnd,
+                vrnd = ?self.vrnd
+            );
             self.rnd = rnd;
             self.vrnd = rnd;
             self.vval = vval.clone();
@@ -242,6 +253,10 @@ impl Paxos {
         } = request;
 
         if config_id != self.config_id {
+            debug!(
+                message = "Rejecting as config_id is not current",
+                config_id = self.config_id
+            );
             return None;
         }
 
@@ -495,5 +510,38 @@ mod tests {
         pax.handle_phase_1a(req);
         // test will panic because no message was sent
         let _msg = extract_message!(pax, Phase1bMessage);
+    }
+
+    #[test]
+    fn test_paxos_handle_phase2a() {
+        trace_init();
+
+        let PROPOSAL: Vec<Endpoint> = vec![
+            "chicago".to_string(),
+            "new-york".to_string(),
+            "boston".to_string(),
+            "seattle".to_string(),
+        ];
+
+        let rank = Rank {
+            round: 1,
+            node_index: hash_str("san-francisco"),
+        };
+
+        let req = Phase2aMessage {
+            sender: "san-francisco".to_string(),
+            config_id: 1,
+            rnd: rank,
+            vval: PROPOSAL.clone(),
+        };
+
+        let mut pax = Paxos::new(K, "san-francisco".to_string(), 1);
+
+        pax.handle_phase_2a(req);
+
+        let msg = extract_message!(pax, Phase2bMessage);
+
+        assert_eq!(msg.config_id, 1);
+        assert_eq!(msg.endpoints, PROPOSAL);
     }
 }

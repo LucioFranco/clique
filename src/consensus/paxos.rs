@@ -15,6 +15,8 @@ use std::{
     convert::TryInto,
     hash::Hasher,
 };
+
+use tracing::{debug, info};
 use twox_hash::XxHash32;
 
 #[derive(Debug)]
@@ -77,21 +79,36 @@ impl Paxos {
     /// Using ranks as round numbers ensure uniquenes even with multiple rounds happening at the
     /// same time.
     pub fn start_phase_1a(&mut self, round: u32) {
+        debug!(
+            message = "Start phase 1a",
+            round = round,
+            crnd = self.crnd.round
+        );
         if self.crnd.round > round {
-            // TODO: handle these () returns
+            debug!(
+                message = "Rejecting request as round is < current round",
+                crnd = self.crnd.round
+            );
             return;
         }
 
         let mut hasher = XxHash32::with_seed(0);
         hasher.write(self.my_addr.as_bytes());
 
+        let hash = hash_str(&self.my_addr);
+
         self.crnd = Rank {
             round,
-            node_index: hasher
-                .finish()
-                .try_into()
-                .expect("Got > 32 bits from 32 bit hasher"),
+            node_index: hash,
         };
+
+        debug!(
+            message = "Sending Phase 1a message",
+            config_id = self.config_id,
+            crnd = ?self.crnd,
+            rnd = ?self.rnd,
+            vrnd = ?self.vrnd
+        );
 
         let kind = RequestKind::Consensus(Consensus::Phase1aMessage(Phase1aMessage {
             config_id: self.config_id,
@@ -114,16 +131,30 @@ impl Paxos {
         } = request;
 
         if config_id != self.config_id {
-            // TODO: add logging here
+            debug!(
+                message = "Rejecting as config_id is not current",
+                config_id = self.config_id
+            );
             return;
         }
 
         if self.crnd < rank {
             self.crnd = rank;
         } else {
-            // TODO: new error type for rejecting message due to lower rank
+            debug!(
+                message = "Rejecting request as round is < current round",
+                crnd = self.crnd.round
+            );
             return;
         }
+
+        debug!(
+            message = "Sending Phase 1a message",
+            config_id = self.config_id,
+            crnd = ?self.crnd,
+            rnd = ?self.rnd,
+            vrnd = ?self.vrnd
+        );
 
         let kind = RequestKind::Consensus(Consensus::Phase1bMessage(Phase1bMessage {
             config_id: self.config_id,
@@ -136,7 +167,7 @@ impl Paxos {
         self.messages.push_back((Some(sender), kind.into()));
     }
 
-    /// At coordinator, coolect phase 1b messages from acceptors and check if they have already
+    /// At coordinator, collect phase 1b messages from acceptors and check if they have already
     /// voted and if a value might have already been chosen
     #[allow(dead_code)]
     pub(crate) fn handle_phase_1b(&mut self, request: Phase1bMessage) {
@@ -182,10 +213,21 @@ impl Paxos {
         } = request;
 
         if config_id != self.config_id {
+            debug!(
+                message = "Rejecting as config_id is not current",
+                config_id = self.config_id
+            );
             return;
         }
 
         if self.rnd <= rnd && self.vrnd != rnd {
+            debug!(
+                message = "Sending Phase 2b message",
+                config_id = self.config_id,
+                crnd = ?self.crnd,
+                rnd = ?self.rnd,
+                vrnd = ?self.vrnd
+            );
             self.rnd = rnd;
             self.vrnd = rnd;
             self.vval = vval.clone();
@@ -211,6 +253,10 @@ impl Paxos {
         } = request;
 
         if config_id != self.config_id {
+            debug!(
+                message = "Rejecting as config_id is not current",
+                config_id = self.config_id
+            );
             return None;
         }
 
@@ -298,5 +344,204 @@ fn select_proposal(messages: &[Phase1bMessage], size: usize) -> Vec<Endpoint> {
             .map(|msg| msg.vval.clone())
             .nth(0)
             .unwrap_or_else(Vec::new)
+    }
+}
+
+fn hash_str(input: &str) -> u32 {
+    let mut hasher = XxHash32::with_seed(0);
+    hasher.write(input.as_bytes());
+
+    hasher
+        .finish()
+        .try_into()
+        .expect("Got > 32 bits from 32 bit hasher")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::support::trace_init;
+
+    const K: usize = 5;
+    const NODES: [&str; 5] = ["chicago", "new-york", "boston", "seattle", "la"];
+    const CONFIG_ID: i64 = 0;
+
+    macro_rules! extract_message {
+        ($pax:expr, $mt:ident) => {
+            if let (_, Message::Request(message)) = $pax.messages.pop_front().unwrap() {
+                if let RequestKind::Consensus(Consensus::$mt(msg)) = message {
+                    msg
+                } else {
+                    panic!("Incorrect type of request!")
+                }
+            } else {
+                panic!("No messages present in the queue!")
+            }
+        };
+    }
+
+    #[test]
+    fn test_paxos_start_phase1a() {
+        trace_init();
+
+        let mut pax = Paxos::new(K, "san-francisco".to_string(), CONFIG_ID);
+
+        pax.start_phase_1a(1);
+        let msg = extract_message!(pax, Phase1aMessage);
+
+        assert_eq!(msg.config_id, CONFIG_ID);
+        assert_eq!(
+            msg.rank,
+            Rank {
+                round: 1,
+                node_index: hash_str("san-francisco")
+            }
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_paxos_start_phase1a_fail() {
+        trace_init();
+
+        let mut pax = Paxos::new(K, "san-francisco".to_string(), CONFIG_ID);
+
+        pax.start_phase_1a(0);
+        let msg = extract_message!(pax, Phase1aMessage);
+
+        pax.handle_phase_1a(msg);
+        let _msg = extract_message!(pax, Phase1aMessage);
+
+        // At this point, anyone starting a new paxos round needs to have the round at >= 1
+        pax.start_phase_1a(0);
+        let _msg = extract_message!(pax, Phase1aMessage);
+    }
+
+    #[test]
+    fn test_paxos_handle_phase1a_safe_path() {
+        trace_init();
+
+        let req = Phase1aMessage {
+            sender: "chicago".into(),
+            config_id: 1,
+            rank: Rank {
+                round: 3,
+                node_index: hash_str("chicago"),
+            },
+        };
+
+        let mut pax = Paxos::new(K, "san-francisco".to_string(), 1);
+
+        let req = pax.handle_phase_1a(req);
+        let msg = extract_message!(pax, Phase1bMessage);
+
+        assert_eq!(msg.config_id, 1);
+        assert_eq!(
+            msg.rnd,
+            Rank {
+                round: 0,
+                node_index: 0
+            }
+        );
+        assert_eq!(
+            msg.vrnd,
+            Rank {
+                round: 0,
+                node_index: 0
+            }
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_paxos_handle_phase1a_wrong_config() {
+        trace_init();
+
+        let rank = Rank {
+            round: 3,
+            node_index: hash_str("chicago"),
+        };
+
+        let req = Phase1aMessage {
+            sender: "chicago".into(),
+            config_id: 1,
+            rank,
+        };
+
+        let mut pax = Paxos::new(K, "san-francisco".to_string(), 2);
+
+        let req = pax.handle_phase_1a(req);
+        // test will panic because no message was sent
+        let _msg = extract_message!(pax, Phase1bMessage);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_paxos_handle_phase1a_wrong_rank() {
+        trace_init();
+
+        let rank = Rank {
+            round: 0,
+            node_index: hash_str("chicago"),
+        };
+
+        let req = Phase1aMessage {
+            sender: "chicago".into(),
+            config_id: 2,
+            rank,
+        };
+
+        let mut pax = Paxos::new(K, "san-francisco".to_string(), 2);
+
+        pax.handle_phase_1a(req);
+        let _msg = extract_message!(pax, Phase1bMessage);
+
+        let rank = Rank {
+            round: 0,
+            node_index: hash_str("chicago"),
+        };
+
+        let req = Phase1aMessage {
+            sender: "chicago".into(),
+            config_id: 2,
+            rank,
+        };
+
+        pax.handle_phase_1a(req);
+        // test will panic because no message was sent
+        let _msg = extract_message!(pax, Phase1bMessage);
+    }
+
+    #[test]
+    fn test_paxos_handle_phase2a() {
+        trace_init();
+
+        let PROPOSAL: Vec<Endpoint> = vec![
+            "chicago".to_string(),
+            "new-york".to_string(),
+            "boston".to_string(),
+            "seattle".to_string(),
+        ];
+
+        let rank = Rank {
+            round: 1,
+            node_index: hash_str("san-francisco"),
+        };
+
+        let req = Phase2aMessage {
+            sender: "san-francisco".to_string(),
+            config_id: 1,
+            rnd: rank,
+            vval: PROPOSAL.clone(),
+        };
+
+        let mut pax = Paxos::new(K, "san-francisco".to_string(), 1);
+
+        pax.handle_phase_2a(req);
+
+        let msg = extract_message!(pax, Phase2bMessage);
+
+        assert_eq!(msg.config_id, 1);
+        assert_eq!(msg.endpoints, PROPOSAL);
     }
 }

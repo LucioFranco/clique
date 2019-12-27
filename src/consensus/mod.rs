@@ -285,6 +285,7 @@ mod tests {
     const K: i32 = 5;
     const NODES: [&str; 5] = ["chicago", "new-york", "boston", "seattle", "la"];
     const CONFIG_ID: i64 = 0;
+
     #[test]
     fn test_handle_fast_round() {
         let PROPOSAL: Vec<Endpoint> = vec![

@@ -78,6 +78,8 @@ impl FastPaxos {
     /// Returns `NewBrokenPipe` if the broadcast was not sucessful
     #[allow(dead_code)]
     pub fn propose(&mut self, proposal: Vec<Endpoint>, scheduler: &mut Scheduler) {
+        self.paxos.register_fast_round(proposal.clone());
+
         let mut paxos_delay = delay_for(self.get_random_delay()).fuse();
 
         let (tx, cancel_rx) = oneshot::channel();

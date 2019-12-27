@@ -281,7 +281,7 @@ impl Paxos {
     }
 
     /// Register the fast pxos instance and set the initial state for classic paxos.
-    pub fn register_fast_round(proposal: Vec<Endpoint>) {
+    pub fn register_fast_round(&mut self, proposal: Vec<Endpoint>) {
         // Do not participate in our only fast round if we are already participating in a classic
         // round. This is possible if a fast round starts while a classic round is still running.
         if (self.rnd.round > 1) {

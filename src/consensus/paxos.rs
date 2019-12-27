@@ -206,7 +206,6 @@ impl Paxos {
     ///
     /// Does not return if the config_id does not match or if the requests' round is >= self.round
     /// and requests' vrnd >= self.vrnd
-    #[allow(dead_code)]
     pub fn handle_phase_2a(&mut self, request: Phase2aMessage) {
         let Phase2aMessage {
             config_id,
@@ -295,7 +294,10 @@ impl Paxos {
         // hash of it's address, and by doing so, ensures that the rank of the round of all classic
         // instances at all nodes is greater than the rank for the fast round, and there is an
         // ordering between rounds instantiated by different nodes.
-        self.rnd = Rank { round: 1, node_index: 1 };
+        self.rnd = Rank {
+            round: 1,
+            node_index: 1,
+        };
         self.vrnd = self.rnd;
         self.vval = proposal;
     }

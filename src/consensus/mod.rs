@@ -16,6 +16,7 @@ use std::{
     time::Duration,
 };
 use tokio::{sync::oneshot, time::delay_for};
+use tracing::debug;
 
 use paxos::Paxos;
 
@@ -198,16 +199,19 @@ impl FastPaxos {
 
         // The proposer is on the wrong configuration
         if config_id != self.config_id {
+            debug!(message = "Incorrect config_id");
             return None;
         }
 
         // We have already seen this proposal
         if self.votes_received.contains(&sender) {
+            debug!(message = "We have already received this vote", ?sender);
             return None;
         }
 
         // We have already make a decision
         if self.decided.load(Ordering::SeqCst) {
+            debug!(message = "We have already made a decision");
             return None;
         }
 
@@ -233,16 +237,14 @@ impl FastPaxos {
         // secion 3.4.1
         let f = ((self.size - 1) as f64 / 4f64).floor() as usize;
 
-        eprintln!(
-            "votes_received: {}, count: {}, size: {}, f: {}",
-            self.votes_received.len(),
-            count,
-            self.size,
-            f
+        debug!(
+            votes_received = self.votes_received.len(),
+            count, self.size, f
         );
 
         if self.votes_received.len() >= self.size - f && *count >= self.size - f {
             // self.on_decide(request.endpoints.clone());
+            debug!(message = "Consensus reached", proposal = ?endpoints.clone());
             Some(endpoints)
         } else {
             None
@@ -265,7 +267,8 @@ impl FastPaxos {
 
     pub fn start_classic_round(&mut self) {
         if !self.decided.load(Ordering::SeqCst) {
-            // The java impl does this..
+            // The java impl does this..beacause the fast round registers itself with the paxos
+            // round which sets classic paxos round to 1.
             self.paxos.start_phase_1a(2);
         }
     }

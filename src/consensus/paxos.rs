@@ -227,8 +227,7 @@ impl Paxos {
                 message = "Sending Phase 2b message",
                 config_id = self.config_id,
                 crnd = ?self.crnd,
-                rnd = ?self.rnd,
-                vrnd = ?self.vrnd
+                rnd = ?rnd,
             );
             self.rnd = rnd;
             self.vrnd = rnd;
@@ -243,6 +242,8 @@ impl Paxos {
 
             self.messages.push_back((None, kind.into()));
         }
+
+        debug!(message = "Rejecting because the request has the incorrect round", self_rnd = ?self.rnd, self_vrnd = ?self.vrnd, rnd = ?rnd)
     }
 
     /// At acceptor, learn about another acceptors vote. If the number of votes for a proposal is >
@@ -603,5 +604,74 @@ mod tests {
 
         pax.handle_phase_2a(req);
         let _msg = extract_message!(pax, Phase2bMessage);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_paxos_handle_phase2a_wrong_round() {
+        trace_init();
+
+        let PROPOSAL: Vec<Endpoint> = vec![
+            "chicago".to_string(),
+            "new-york".to_string(),
+            "boston".to_string(),
+            "seattle".to_string(),
+        ];
+
+        let rank = Rank {
+            round: 0,
+            node_index: hash_str("san-francisco"),
+        };
+
+        let req = Phase2aMessage {
+            sender: "san-francisco".to_string(),
+            config_id: 1,
+            rnd: rank,
+            vval: PROPOSAL.clone(),
+        };
+
+        let mut pax = Paxos::new(K, "san-francisco".to_string(), 1);
+
+        // This is to increase the round of the paxos instance past 0
+        pax.register_fast_round(vec![]);
+
+        pax.handle_phase_2a(req);
+        let _msg = extract_message!(pax, Phase2bMessage);
+    }
+
+    // TODO: test for when the wrong vrnd is sent in the request. Once handle phase1b test is
+    // written.
+
+    #[test]
+    fn test_paxos_handle_phase2b() {
+        trace_init();
+
+        let PROPOSAL: Vec<Endpoint> = vec![
+            "chicago".to_string(),
+            "new-york".to_string(),
+            "boston".to_string(),
+            "seattle".to_string(),
+        ];
+
+        let rank = Rank {
+            round: 1,
+            node_index: hash_str("san-francisco"),
+        };
+
+        let req = Phase2bMessage {
+            config_id: 1,
+            rnd: rank,
+            sender: "san-francisco".to_string(),
+            endpoints: PROPOSAL.clone(),
+        };
+
+        let mut pax = Paxos::new(K, "san-francisco".to_string(), 1);
+        let mut res = None;
+
+        for _ in 0..5 {
+            res = pax.handle_phase_2b(req.clone());
+        }
+
+        assert_eq!(res, Some(PROPOSAL));
     }
 }

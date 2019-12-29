@@ -21,8 +21,6 @@ use twox_hash::XxHash32;
 
 #[derive(Debug)]
 pub struct Paxos {
-    // TODO: come up with a design for onDecide
-    // client: Client,
     size: usize,
     my_addr: Endpoint,
     /// Highest-numbered round we have participated in
@@ -35,10 +33,11 @@ pub struct Paxos {
     crnd: Rank,
     /// The value we have picked for a given round `i`
     cval: Vec<Endpoint>,
-    // The config ID we are working with.
+    /// The current configuration
     config_id: ConfigId,
     phase_1b_messages: Vec<Phase1bMessage>,
     phase_2a_messages: Vec<Phase2aMessage>,
+    /// Accepted responses for a given round `i`
     accept_responses: HashMap<Rank, HashMap<Endpoint, Phase2bMessage>>,
     decided: bool,
 
@@ -123,7 +122,7 @@ impl Paxos {
     ///
     /// If `crnd` > then we don't respond back.
     #[allow(dead_code)]
-    pub(crate) fn handle_phase_1a(&mut self, request: Phase1aMessage) {
+    pub fn handle_phase_1a(&mut self, request: Phase1aMessage) {
         let Phase1aMessage {
             sender,
             config_id,
@@ -170,7 +169,7 @@ impl Paxos {
     /// At coordinator, collect phase 1b messages from acceptors and check if they have already
     /// voted and if a value might have already been chosen
     #[allow(dead_code)]
-    pub(crate) fn handle_phase_1b(&mut self, request: Phase1bMessage) {
+    pub fn handle_phase_1b(&mut self, request: Phase1bMessage) {
         let message = request.clone();
 
         let Phase1bMessage { config_id, rnd, .. } = request;
@@ -202,9 +201,12 @@ impl Paxos {
         }
     }
 
-    /// At acceptor, accept a phase 2a message.
-    #[allow(dead_code)]
-    pub(crate) fn handle_phase_2a(&mut self, request: Phase2aMessage) {
+    /// At acceptor, accept a phase2a message from the coordinator and broadcast the acceptance of
+    /// the message to the rest of the cluster.
+    ///
+    /// Does not return if the config_id does not match or if the requests' round is >= self.round
+    /// and requests' vrnd >= self.vrnd
+    pub fn handle_phase_2a(&mut self, request: Phase2aMessage) {
         let Phase2aMessage {
             config_id,
             rnd,
@@ -225,8 +227,7 @@ impl Paxos {
                 message = "Sending Phase 2b message",
                 config_id = self.config_id,
                 crnd = ?self.crnd,
-                rnd = ?self.rnd,
-                vrnd = ?self.vrnd
+                rnd = ?rnd,
             );
             self.rnd = rnd;
             self.vrnd = rnd;
@@ -239,12 +240,19 @@ impl Paxos {
                 endpoints: vval,
             }));
 
-            self.messages.push_back((sender.into(), kind.into()));
+            self.messages.push_back((None, kind.into()));
         }
+
+        debug!(message = "Rejecting because the request has the incorrect round", self_rnd = ?self.rnd, self_vrnd = ?self.vrnd, rnd = ?rnd)
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn handle_phase_2b(&mut self, request: Phase2bMessage) -> Option<Vec<Endpoint>> {
+    /// At acceptor, learn about another acceptors vote. If the number of votes for a proposal is >
+    /// half the size of the cluster, consensus is achieved.
+    ///
+    /// Does not return if the config_id does not match or enough votes are not found.
+    pub fn handle_phase_2b(&mut self, request: Phase2bMessage) -> Option<Vec<Endpoint>> {
+        let req_copy = request.clone();
+
         let Phase2bMessage {
             config_id,
             rnd,
@@ -260,23 +268,57 @@ impl Paxos {
             return None;
         }
 
-        let phase_2b_messages_in_rnd = self
-            .accept_responses
+        self.accept_responses
             .entry(rnd)
             .or_insert_with(HashMap::new);
 
-        if phase_2b_messages_in_rnd.len() > (self.size / 2) && !self.decided {
-            // TODO: let caller know of decision
-            self.decided = true;
+        self.accept_responses.entry(rnd).and_modify(|map| {
+            map.insert(req_copy.sender.clone(), req_copy);
+        });
 
-            // TODO: propogate decision
+        let phase_2b_messages_in_rnd = self.accept_responses.get(&rnd).unwrap_or_else(|| {
+            unreachable!("Shouldn't happen as we ensure that the map is initialized");
+        });
+
+        debug!(?phase_2b_messages_in_rnd, self.decided);
+
+        if phase_2b_messages_in_rnd.len() > (self.size / 2) && !self.decided {
+            debug!(message = "Decided on a proposal", proposal = ?endpoints);
+            self.decided = true;
             Some(endpoints)
         } else {
+            debug!(message = "Unable to decide on a proposal");
             None
         }
     }
+
+    /// Register the fast pxos instance and set the initial state for classic paxos.
+    pub fn register_fast_round(&mut self, proposal: Vec<Endpoint>) {
+        // Do not participate in our only fast round if we are already participating in a classic
+        // round. This is possible if a fast round starts while a classic round is still running.
+        if (self.rnd.round > 1) {
+            return;
+        }
+
+        // This is the first round in the consensus and it is always a fast round, and the **only**
+        // fast round. The `rnd` value here is temporary, as if the fast round faallsback on to the
+        // classic paxos, the round will start from 2 and each node will set `node_index` to the
+        // hash of it's address, and by doing so, ensures that the rank of the round of all classic
+        // instances at all nodes is greater than the rank for the fast round, and there is an
+        // ordering between rounds instantiated by different nodes.
+        self.rnd = Rank {
+            round: 1,
+            node_index: 1,
+        };
+        self.vrnd = self.rnd;
+        self.vval = proposal;
+    }
 }
 
+/// The rule with which a coordinator picks a value to propose from the received `Phase1bMessage`s.
+/// This is based on the logic present in Figure 2 of the Fast paxos paper:
+///
+/// https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/tr-2005-112.pdf
 fn select_proposal(messages: &[Phase1bMessage], size: usize) -> Vec<Endpoint> {
     // The rule with which a coordinator picks a value proposed. Corresponds
     // Figure 2 of the Fast Paxos paper:
@@ -543,5 +585,110 @@ mod tests {
 
         assert_eq!(msg.config_id, 1);
         assert_eq!(msg.endpoints, PROPOSAL);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_paxos_handle_phase2a_wrong_config() {
+        trace_init();
+
+        let PROPOSAL: Vec<Endpoint> = vec![
+            "chicago".to_string(),
+            "new-york".to_string(),
+            "boston".to_string(),
+            "seattle".to_string(),
+        ];
+
+        let rank = Rank {
+            round: 1,
+            node_index: hash_str("san-francisco"),
+        };
+
+        let req = Phase2aMessage {
+            sender: "san-francisco".to_string(),
+            config_id: 0,
+            rnd: rank,
+            vval: PROPOSAL.clone(),
+        };
+
+        let mut pax = Paxos::new(K, "san-francisco".to_string(), 1);
+
+        pax.handle_phase_2a(req);
+        let _msg = extract_message!(pax, Phase2bMessage);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_paxos_handle_phase2a_wrong_round() {
+        trace_init();
+
+        let PROPOSAL: Vec<Endpoint> = vec![
+            "chicago".to_string(),
+            "new-york".to_string(),
+            "boston".to_string(),
+            "seattle".to_string(),
+        ];
+
+        let rank = Rank {
+            round: 0,
+            node_index: hash_str("san-francisco"),
+        };
+
+        let req = Phase2aMessage {
+            sender: "san-francisco".to_string(),
+            config_id: 1,
+            rnd: rank,
+            vval: PROPOSAL.clone(),
+        };
+
+        let mut pax = Paxos::new(K, "san-francisco".to_string(), 1);
+
+        // This is to increase the round of the paxos instance past 0
+        pax.register_fast_round(vec![]);
+
+        pax.handle_phase_2a(req);
+        let _msg = extract_message!(pax, Phase2bMessage);
+    }
+
+    // TODO: test for when the wrong vrnd is sent in the request. Once handle phase1b test is
+    // written.
+
+    #[test]
+    fn test_paxos_handle_phase2b() {
+        trace_init();
+
+        let PROPOSAL: Vec<Endpoint> = vec![
+            "chicago".to_string(),
+            "new-york".to_string(),
+            "boston".to_string(),
+            "seattle".to_string(),
+        ];
+
+        let rank = Rank {
+            round: 1,
+            node_index: hash_str("san-francisco"),
+        };
+
+        let requests: Vec<Phase2bMessage> = NODES
+            .iter()
+            .map(|node| Phase2bMessage {
+                config_id: 1,
+                rnd: Rank {
+                    round: 1,
+                    node_index: hash_str("san-francisco"), // san-francisco is the node acting as a coordinator
+                },
+                sender: node.to_string(),
+                endpoints: PROPOSAL.clone(),
+            })
+            .collect();
+
+        let mut pax = Paxos::new(K, "san-francisco".to_string(), 1);
+
+        for req in requests {
+            if let Some(res) = pax.handle_phase_2b(req) {
+                assert_eq!(res, PROPOSAL);
+                break;
+            }
+        }
     }
 }

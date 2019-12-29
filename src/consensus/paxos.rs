@@ -251,6 +251,8 @@ impl Paxos {
     ///
     /// Does not return if the config_id does not match or enough votes are not found.
     pub fn handle_phase_2b(&mut self, request: Phase2bMessage) -> Option<Vec<Endpoint>> {
+        let req_copy = request.clone();
+
         let Phase2bMessage {
             config_id,
             rnd,
@@ -266,10 +268,19 @@ impl Paxos {
             return None;
         }
 
-        let phase_2b_messages_in_rnd = self
-            .accept_responses
+        self.accept_responses
             .entry(rnd)
             .or_insert_with(HashMap::new);
+
+        self.accept_responses.entry(rnd).and_modify(|map| {
+            map.insert(req_copy.sender.clone(), req_copy);
+        });
+
+        let phase_2b_messages_in_rnd = self.accept_responses.get(&rnd).unwrap_or_else(|| {
+            unreachable!("Shouldn't happen as we ensure that the map is initialized");
+        });
+
+        debug!(?phase_2b_messages_in_rnd, self.decided);
 
         if phase_2b_messages_in_rnd.len() > (self.size / 2) && !self.decided {
             debug!(message = "Decided on a proposal", proposal = ?endpoints);
@@ -658,20 +669,26 @@ mod tests {
             node_index: hash_str("san-francisco"),
         };
 
-        let req = Phase2bMessage {
-            config_id: 1,
-            rnd: rank,
-            sender: "san-francisco".to_string(),
-            endpoints: PROPOSAL.clone(),
-        };
+        let requests: Vec<Phase2bMessage> = NODES
+            .iter()
+            .map(|node| Phase2bMessage {
+                config_id: 1,
+                rnd: Rank {
+                    round: 1,
+                    node_index: hash_str("san-francisco"), // san-francisco is the node acting as a coordinator
+                },
+                sender: node.to_string(),
+                endpoints: PROPOSAL.clone(),
+            })
+            .collect();
 
         let mut pax = Paxos::new(K, "san-francisco".to_string(), 1);
-        let mut res = None;
 
-        for _ in 0..5 {
-            res = pax.handle_phase_2b(req.clone());
+        for req in requests {
+            if let Some(res) = pax.handle_phase_2b(req) {
+                assert_eq!(res, PROPOSAL);
+                break;
+            }
         }
-
-        assert_eq!(res, Some(PROPOSAL));
     }
 }
